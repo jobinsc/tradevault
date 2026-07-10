@@ -14,8 +14,9 @@ import {
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth, isAdmin } from './firebase';
 import AuthPage from './AuthPage';
-import AdminPanel from './AdminPanel';
-import {
+import AdminPanel from './AdminPanel';import SymbolAutocomplete from './SymbolAutocomplete';
+import 
+{
   createUserProfile,
   getUserProfile,
   getTrades,
@@ -28,6 +29,11 @@ import {
   saveRules as saveRulesToCloud,
   migrateLocalDataToCloud,
 } from './dataService';
+import { 
+  fetchMultipleStockPrices, 
+  calculateLivePnL, 
+  calculateChangePercent 
+} from './priceService';
 
 
 // ============ ICONS ============
@@ -411,6 +417,9 @@ function App() {
   const [dataLoading, setDataLoading] = useState(false);
   const [showMigrationPrompt, setShowMigrationPrompt] = useState(false);
     const [showAdminPanel, setShowAdminPanel] = useState(false);
+      const [livePrices, setLivePrices] = useState({});
+  const [pricesLoading, setPricesLoading] = useState(false);
+  const [lastPriceUpdate, setLastPriceUpdate] = useState(null);
 
   const loadUserData = async (userId) => {
     try {
@@ -471,6 +480,40 @@ function App() {
     setShowMigrationPrompt(false);
     setDataLoading(false);
   };
+    // Fetch live prices for open trades
+  const fetchLivePrices = async () => {
+    const openTrades = trades.filter(t => t.status === 'open');
+    if (openTrades.length === 0) {
+      setLivePrices({});
+      return;
+    }
+    
+    setPricesLoading(true);
+    try {
+      const symbols = openTrades.map(t => t.symbol);
+      const prices = await fetchMultipleStockPrices(symbols);
+      setLivePrices(prices);
+      setLastPriceUpdate(new Date());
+    } catch (error) {
+      console.error('Price fetch error:', error);
+    }
+    setPricesLoading(false);
+  };
+
+  // Auto-fetch prices every 30 seconds
+  useEffect(() => {
+    if (!user || trades.length === 0) return;
+    
+    // Fetch immediately
+    fetchLivePrices();
+    
+    // Then every 30 seconds
+    const interval = setInterval(() => {
+      fetchLivePrices();
+    }, 30000);
+    
+    return () => clearInterval(interval);
+  }, [user, trades.length]);
     // Auto-save rules to cloud when they change
   useEffect(() => {
     if (user && rules.length > 0 && !authLoading && !dataLoading) {
@@ -1331,6 +1374,117 @@ function App() {
                   </ResponsiveContainer>
                 </div>
               )}
+                            {/* LIVE PRICES WIDGET */}
+              {trades.filter(t => t.status === 'open').length > 0 && (
+                <div className="chart-card" style={{ marginBottom: 24 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                    <div className="chart-card-title" style={{ margin: 0 }}>
+                      🔴 LIVE Prices (Open Positions)
+                      {pricesLoading && <span style={{ marginLeft: 10, fontSize: 11, color: 'var(--text-muted)' }}>⏳ Updating...</span>}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      {lastPriceUpdate && (
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                          Updated: {format(lastPriceUpdate, 'HH:mm:ss')}
+                        </span>
+                      )}
+                      <button 
+                        onClick={fetchLivePrices}
+                        style={{
+                          padding: '6px 12px',
+                          background: 'var(--bg-input)',
+                          color: 'var(--text-secondary)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: 6,
+                          fontSize: 11,
+                          cursor: 'pointer',
+                          fontWeight: 600,
+                        }}
+                      >
+                        🔄 Refresh
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+                    {trades.filter(t => t.status === 'open').map(trade => {
+                      const priceData = livePrices[trade.symbol.toUpperCase()];
+                      const currentPrice = priceData?.price;
+                      const livePnL = currentPrice ? calculateLivePnL(trade, currentPrice) : 0;
+                      const changePct = currentPrice ? calculateChangePercent(currentPrice, trade.entryPrice) : 0;
+                      const isProfit = livePnL >= 0;
+                      
+                      return (
+                        <div key={trade.id} style={{
+                          padding: 16,
+                          background: 'var(--bg-input)',
+                          borderRadius: 12,
+                          border: `1px solid ${isProfit ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`,
+                        }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: 10 }}>
+                            <div>
+                              <div style={{ fontSize: 14, fontWeight: 700 }}>{trade.symbol}</div>
+                              <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                                {trade.tradeType} • {trade.direction}
+                              </div>
+                            </div>
+                            {currentPrice ? (
+                              <div style={{ textAlign: 'right' }}>
+                                <div style={{ fontSize: 16, fontWeight: 700 }}>₹{Number(currentPrice).toFixed(2)}</div>
+                                <div style={{ 
+                                  fontSize: 11, 
+                                  color: isProfit ? 'var(--accent-green)' : 'var(--accent-red)',
+                                  fontWeight: 600 
+                                }}>
+                                  {isProfit ? '↑' : '↓'} {Math.abs(changePct).toFixed(2)}%
+                                </div>
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Loading...</div>
+                            )}
+                          </div>
+                          
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 11 }}>
+                            <div>
+                              <div style={{ color: 'var(--text-muted)' }}>Entry</div>
+                              <div style={{ fontWeight: 600 }}>₹{Number(trade.entryPrice).toFixed(2)}</div>
+                            </div>
+                            <div>
+                              <div style={{ color: 'var(--text-muted)' }}>Qty</div>
+                              <div style={{ fontWeight: 600 }}>{trade.quantity}</div>
+                            </div>
+                          </div>
+                          
+                          {currentPrice && (
+                            <div style={{ 
+                              marginTop: 10, 
+                              padding: 10, 
+                              background: isProfit ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
+                              borderRadius: 8,
+                              textAlign: 'center'
+                            }}>
+                              <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>
+                                Live P&L
+                              </div>
+                              <div style={{ 
+                                fontSize: 18, 
+                                fontWeight: 800,
+                                color: isProfit ? 'var(--accent-green)' : 'var(--accent-red)'
+                              }}>
+                                {isProfit ? '+' : ''}₹{Math.abs(livePnL).toFixed(0)}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  
+                  <div style={{ marginTop: 14, padding: 10, background: 'rgba(59,130,246,0.1)', borderRadius: 8, fontSize: 11, color: 'var(--text-muted)', textAlign: 'center' }}>
+                    ℹ️ Prices from Yahoo Finance (15-min delayed) • Auto-refresh every 30 seconds
+                  </div>
+                </div>
+              )}
 
               <div className="trades-section">
                 <div className="trades-header">
@@ -1987,6 +2141,29 @@ function TradeModal({ trade, onSave, onClose }) {
     ...trade
   });
   const [tagInput, setTagInput] = useState('');
+    const [symbolSuggestions, setSymbolSuggestions] = useState([]);
+  const [showSymbolDropdown, setShowSymbolDropdown] = useState(false);
+  const [symbolSearching, setSymbolSearching] = useState(false);
+  const symbolSearchTimeout = React.useRef(null);
+
+  const handleSymbolSearch = async (query) => {
+    if (symbolSearchTimeout.current) {
+      clearTimeout(symbolSearchTimeout.current);
+    }
+    
+    symbolSearchTimeout.current = setTimeout(async () => {
+      setSymbolSearching(true);
+      try {
+        const { searchStocksLive } = await import('./stocksDatabase');
+        const results = await searchStocksLive(query);
+        setSymbolSuggestions(results);
+      } catch (error) {
+        console.error('Search error:', error);
+        setSymbolSuggestions([]);
+      }
+      setSymbolSearching(false);
+    }, 300);
+  };
 
   const upd = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
@@ -2025,6 +2202,107 @@ function TradeModal({ trade, onSave, onClose }) {
             <div className="form-grid">
               <div className="form-group">
                 <label>Symbol *</label>
+<input 
+  value={form.symbol} 
+  onChange={e => upd('symbol', e.target.value.toUpperCase())} 
+  placeholder="Type stock symbol (e.g., RELIANCE)" 
+  list="stocks-datalist"
+  autoComplete="off"
+  required 
+/>
+<label>Symbol *</label>
+<div style={{ position: 'relative' }}>
+  <input 
+    value={form.symbol} 
+    onChange={e => {
+      const val = e.target.value.toUpperCase();
+      upd('symbol', val);
+      handleSymbolSearch(val);
+    }}
+    onFocus={() => {
+      setShowSymbolDropdown(true);
+      if (!form.symbol) handleSymbolSearch('');
+    }}
+    onBlur={() => setTimeout(() => setShowSymbolDropdown(false), 200)}
+    placeholder="Type any stock (e.g., REL, TCS, AAPL)" 
+    autoComplete="off"
+    required 
+    style={{ width: '100%' }}
+  />
+  {symbolSearching && (
+    <div style={{
+      position: 'absolute',
+      right: 12,
+      top: '50%',
+      transform: 'translateY(-50%)',
+      fontSize: 11,
+      color: '#94a3b8',
+    }}>
+      🔍 Searching...
+    </div>
+  )}
+  {showSymbolDropdown && symbolSuggestions.length > 0 && (
+    <div style={{
+      position: 'absolute',
+      top: '100%',
+      left: 0,
+      right: 0,
+      marginTop: 4,
+      background: '#1a1f35',
+      border: '1px solid #2a3150',
+      borderRadius: 8,
+      maxHeight: 300,
+      overflowY: 'auto',
+      zIndex: 1000,
+      boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+    }}>
+      {symbolSuggestions.map((stock, idx) => (
+        <div
+          key={`${stock.symbol}-${stock.exchange}-${idx}`}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            upd('symbol', stock.symbol);
+            setShowSymbolDropdown(false);
+          }}
+          style={{
+            padding: '10px 14px',
+            cursor: 'pointer',
+            borderBottom: '1px solid rgba(42,49,80,0.5)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 10,
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.background = '#2a3150'}
+          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+        >
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 700, fontSize: 14, color: '#fff' }}>
+              {stock.exchange === 'NSE' && '🇮🇳 '}
+              {stock.exchange === 'BSE' && '🇮🇳 '}
+              {stock.exchange === 'US' && '🇺🇸 '}
+              {stock.symbol}
+            </div>
+            <div style={{ fontSize: 11, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {stock.name}
+            </div>
+          </div>
+          <span style={{
+            fontSize: 9,
+            padding: '3px 8px',
+            background: stock.exchange === 'NSE' ? '#10b981' : stock.exchange === 'BSE' ? '#3b82f6' : '#f59e0b',
+            color: '#fff',
+            borderRadius: 4,
+            fontWeight: 700,
+            flexShrink: 0,
+          }}>
+            {stock.exchange}
+          </span>
+        </div>
+      ))}
+    </div>
+  )}
+</div>
                 <input value={form.symbol} onChange={e => upd('symbol', e.target.value.toUpperCase())} placeholder="RELIANCE, NIFTY" required />
               </div>
               <div className="form-group">
