@@ -13,12 +13,28 @@ const firebaseConfig = {
   measurementId: "G-MJ7S998SJ4"
 };
 
+// Admin emails - ONLY these emails can access admin panel
+export const ADMIN_EMAILS = ['jobinsc@gmail.com'];
+
+// User statuses
+export const USER_STATUS = {
+  ACTIVE: 'active',
+  SUSPENDED: 'suspended',
+  BANNED: 'banned',
+  PENDING: 'pending',
+};
+
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
-// Export Auth & Firestore
+// Export
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const googleProvider = new GoogleAuthProvider();
+
+// Helper: Check if user is admin
+export const isAdmin = (user) => {
+  return user && ADMIN_EMAILS.includes(user.email);
+};
 
 export default app;

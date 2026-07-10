@@ -12,8 +12,23 @@ import {
   differenceInDays, differenceInMonths, differenceInYears
 } from 'date-fns';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { auth } from './firebase';
+import { auth, isAdmin } from './firebase';
 import AuthPage from './AuthPage';
+import AdminPanel from './AdminPanel';
+import {
+  createUserProfile,
+  getUserProfile,
+  getTrades,
+  addTrade as addTradeToCloud,
+  updateTrade as updateTradeInCloud,
+  deleteTrade as deleteTradeFromCloud,
+  bulkAddTrades,
+  updateUserCapital,
+  getRules as getRulesFromCloud,
+  saveRules as saveRulesToCloud,
+  migrateLocalDataToCloud,
+} from './dataService';
+
 
 // ============ ICONS ============
 const Icons = {
@@ -379,32 +394,96 @@ const autoMatchTrades = (rawTrades) => {
 
 // ============ MAIN APP ============
 function App() {
-  const [trades, setTrades] = useState(() => getStored('tv_trades', []));
-  const [capital, setCapital] = useState(() => getStored('tv_capital', 100000));
-    // ============ FIREBASE AUTH ============
+   const [trades, setTrades] = useState([]);
+  const [capital, setCapital] = useState(100000);
+  const [rules, setRules] = useState([
+    { id: '1', text: 'Always use stop loss', checked: false },
+    { id: '2', text: 'Risk max 2% per trade', checked: false },
+    { id: '3', text: 'No revenge trading', checked: false },
+    { id: '4', text: 'Follow the trading plan', checked: false },
+    { id: '5', text: 'Wait for clear setup', checked: false },
+  ]);
+  
+  // ============ FIREBASE AUTH ============
   const [user, setUser] = useState(null);
+  const [userProfile, setUserProfile] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [dataLoading, setDataLoading] = useState(false);
+  const [showMigrationPrompt, setShowMigrationPrompt] = useState(false);
+    const [showAdminPanel, setShowAdminPanel] = useState(false);
+
+  const loadUserData = async (userId) => {
+    try {
+      const cloudTrades = await getTrades(userId);
+      setTrades(cloudTrades);
+      
+      const cloudRules = await getRulesFromCloud(userId);
+      if (cloudRules.length > 0) {
+        setRules(cloudRules);
+      }
+      
+      const profile = await getUserProfile(userId);
+      if (profile && profile.capital) {
+        setCapital(profile.capital);
+      }
+    } catch (error) {
+      console.error('Error loading data:', error);
+    }
+  };
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (currentUser) {
+        setDataLoading(true);
+        const profileResult = await createUserProfile(currentUser);
+        const profile = await getUserProfile(currentUser.uid);
+        setUserProfile(profile);
+        
+        await loadUserData(currentUser.uid);
+        
+        const localTrades = JSON.parse(localStorage.getItem('tv_trades') || '[]');
+        const migrated = localStorage.getItem('tv_migrated');
+        if (localTrades.length > 0 && !migrated && profileResult.isNew) {
+          setShowMigrationPrompt(true);
+        }
+        
+        setDataLoading(false);
+      } else {
+        setUserProfile(null);
+        setTrades([]);
+      }
       setUser(currentUser);
       setAuthLoading(false);
     });
     return () => unsubscribe();
   }, []);
 
+  const handleMigration = async () => {
+    if (!user) return;
+    setDataLoading(true);
+    const result = await migrateLocalDataToCloud(user.uid);
+    if (result.migrated) {
+      alert(`✅ Migrated ${result.trades} trades to cloud!`);
+      await loadUserData(user.uid);
+    } else {
+      alert('❌ Migration failed: ' + (result.error || result.message));
+    }
+    setShowMigrationPrompt(false);
+    setDataLoading(false);
+  };
+    // Auto-save rules to cloud when they change
+  useEffect(() => {
+    if (user && rules.length > 0 && !authLoading && !dataLoading) {
+      saveRulesToCloud(user.uid, rules).catch(err => console.error('Rules save error:', err));
+    }
+  }, [rules, user]);
+
   const handleLogout = async () => {
     if (window.confirm('Are you sure you want to logout?')) {
       await signOut(auth);
     }
   };
-  const [rules, setRules] = useState(() => getStored('tv_rules', [
-    { id: '1', text: 'Always use stop loss', checked: false },
-    { id: '2', text: 'Risk max 2% per trade', checked: false },
-    { id: '3', text: 'No revenge trading', checked: false },
-    { id: '4', text: 'Follow the trading plan', checked: false },
-    { id: '5', text: 'Wait for clear setup', checked: false },
-  ]));
+  
   const [page, setPage] = useState('dashboard');
   const [showTradeModal, setShowTradeModal] = useState(false);
   const [editTrade, setEditTrade] = useState(null);
@@ -419,9 +498,7 @@ function App() {
   const [showImportPreview, setShowImportPreview] = useState(false);
   const [importPreview, setImportPreview] = useState([]);
 
-  useEffect(() => setStored('tv_trades', trades), [trades]);
-  useEffect(() => setStored('tv_capital', capital), [capital]);
-  useEffect(() => setStored('tv_rules', rules), [rules]);
+  
 
   const showMsg = (m) => { setMsg(m); setTimeout(() => setMsg(''), 4000); };
 
@@ -570,7 +647,9 @@ function App() {
   }, [trades]);
 
   // ============ HANDLERS ============
-  const saveTrade = (data) => {
+  const saveTrade = async (data) => {
+    if (!user) return;
+    
     // Auto-calculate P&L
     if (data.exitPrice && data.entryPrice && data.quantity) {
       data.pnl = calculatePnL(data);
@@ -580,53 +659,86 @@ function App() {
       data.pnl = 0;
     }
 
-    if (editTrade) {
-      setTrades(prev => prev.map(t => t.id === editTrade.id ? { ...data, id: editTrade.id } : t));
-      showMsg('✅ Trade updated & analytics refreshed!');
-    } else {
-      setTrades(prev => [...prev, { ...data, id: uuidv4(), createdAt: new Date().toISOString() }]);
-      showMsg('🎉 Trade added & analytics updated!');
+    try {
+      if (editTrade) {
+        const { id, ...tradeData } = data;
+        await updateTradeInCloud(user.uid, editTrade.id, tradeData);
+        setTrades(prev => prev.map(t => t.id === editTrade.id ? { ...tradeData, id: editTrade.id } : t));
+        showMsg('✅ Trade updated & saved to cloud!');
+      } else {
+        const newTradeId = await addTradeToCloud(user.uid, data);
+        setTrades(prev => [...prev, { ...data, id: newTradeId }]);
+        showMsg('🎉 Trade saved to cloud!');
+      }
+    } catch (error) {
+      alert('Error saving trade: ' + error.message);
     }
+    
     setShowTradeModal(false);
     setEditTrade(null);
   };
 
-  const deleteTrade = (id) => {
+  const deleteTrade = async (id) => {
+    if (!user) return;
     if (window.confirm('Delete this trade? This action cannot be undone.')) {
-      setTrades(prev => prev.filter(t => t.id !== id));
-      showMsg('🗑️ Trade deleted successfully!');
+      try {
+        await deleteTradeFromCloud(user.uid, id);
+        setTrades(prev => prev.filter(t => t.id !== id));
+        showMsg('🗑️ Trade deleted from cloud!');
+      } catch (error) {
+        alert('Error deleting trade: ' + error.message);
+      }
     }
   };
 
-  const deleteMultipleTrades = () => {
+  const deleteMultipleTrades = async () => {
+    if (!user) return;
     if (selectedTrades.length === 0) {
       alert('Please select trades to delete');
       return;
     }
     if (window.confirm(`Delete ${selectedTrades.length} selected trade(s)? This cannot be undone.`)) {
-      setTrades(prev => prev.filter(t => !selectedTrades.includes(t.id)));
-      setSelectedTrades([]);
-      showMsg(`🗑️ ${selectedTrades.length} trades deleted!`);
+      try {
+        await Promise.all(selectedTrades.map(id => deleteTradeFromCloud(user.uid, id)));
+        setTrades(prev => prev.filter(t => !selectedTrades.includes(t.id)));
+        setSelectedTrades([]);
+        showMsg(`🗑️ ${selectedTrades.length} trades deleted!`);
+      } catch (error) {
+        alert('Error deleting trades: ' + error.message);
+      }
     }
   };
 
-  const deleteAllTrades = () => {
+  const deleteAllTrades = async () => {
+    if (!user) return;
     if (trades.length === 0) {
       alert('No trades to delete');
       return;
     }
     if (window.confirm(`⚠️ DELETE ALL ${trades.length} TRADES? This action cannot be undone!\n\nMake sure you've exported a backup first!`)) {
       if (window.confirm('Are you REALLY sure? This will delete everything permanently!')) {
-        setTrades([]);
-        setSelectedTrades([]);
-        showMsg('🗑️ All trades deleted!');
+        try {
+          await Promise.all(trades.map(t => deleteTradeFromCloud(user.uid, t.id)));
+          setTrades([]);
+          setSelectedTrades([]);
+          showMsg('🗑️ All trades deleted!');
+        } catch (error) {
+          alert('Error: ' + error.message);
+        }
       }
     }
   };
 
-  const duplicateTrade = (t) => {
-    setTrades(prev => [...prev, { ...t, id: uuidv4(), createdAt: new Date().toISOString() }]);
-    showMsg('📋 Trade duplicated!');
+  const duplicateTrade = async (t) => {
+    if (!user) return;
+    try {
+      const { id, ...tradeData } = t;
+      const newTradeId = await addTradeToCloud(user.uid, tradeData);
+      setTrades(prev => [...prev, { ...tradeData, id: newTradeId }]);
+      showMsg('📋 Trade duplicated!');
+    } catch (error) {
+      alert('Error duplicating: ' + error.message);
+    }
   };
 
   const toggleTradeSelection = (id) => {
@@ -698,16 +810,27 @@ function App() {
 
   const importJSON = (e) => {
     const file = e.target.files[0];
-    if (!file) return;
+    if (!file || !user) return;
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       try {
         const data = JSON.parse(ev.target.result);
-        if (data.trades) setTrades(data.trades);
-        if (data.capital) setCapital(data.capital);
-        if (data.rules) setRules(data.rules);
-        showMsg('🎉 Data restored & all analytics refreshed!');
-      } catch { alert('Invalid file'); }
+        setDataLoading(true);
+        if (data.trades && data.trades.length > 0) {
+          await bulkAddTrades(user.uid, data.trades);
+        }
+        if (data.capital) {
+          await updateUserCapital(user.uid, data.capital);
+        }
+        if (data.rules) {
+          await saveRulesToCloud(user.uid, data.rules);
+        }
+        await loadUserData(user.uid);
+        showMsg('🎉 Data restored to cloud!');
+      } catch (err) { 
+        alert('Invalid file: ' + err.message); 
+      }
+      setDataLoading(false);
     };
     reader.readAsText(file);
   };
@@ -850,11 +973,19 @@ function App() {
     }
   };
 
-  const confirmImport = () => {
-    setTrades(prev => [...prev, ...importPreview]);
-    const closedCount = importPreview.filter(t => t.status === 'closed').length;
-    const openCount = importPreview.filter(t => t.status === 'open').length;
-    showMsg(`🎉 Imported ${importPreview.length} trades! (${closedCount} closed, ${openCount} open) Analytics updated!`);
+  const confirmImport = async () => {
+    if (!user) return;
+    try {
+      setDataLoading(true);
+      await bulkAddTrades(user.uid, importPreview);
+      await loadUserData(user.uid);
+      const closedCount = importPreview.filter(t => t.status === 'closed').length;
+      const openCount = importPreview.filter(t => t.status === 'open').length;
+      showMsg(`🎉 Imported ${importPreview.length} trades to cloud! (${closedCount} closed, ${openCount} open)`);
+    } catch (error) {
+      alert('Error importing: ' + error.message);
+    }
+    setDataLoading(false);
     setShowImportPreview(false);
     setImportPreview([]);
   };
@@ -872,18 +1003,21 @@ function App() {
     settings: { t: 'Settings', s: 'Backup & configuration' },
   }[page] || { t: 'Dashboard', s: '' };
   // ============ AUTH GATE ============
-  if (authLoading) {
+  if (authLoading || dataLoading) {
     return (
       <div style={{
         display: 'flex',
+        flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
         minHeight: '100vh',
         background: '#0f172a',
         color: '#fff',
         fontSize: 18,
+        gap: 12,
       }}>
-        ⏳ Loading TradeVault...
+        <div style={{ fontSize: 60 }}>📊</div>
+        <div>⏳ {authLoading ? 'Loading TradeVault...' : 'Loading your data from cloud...'}</div>
       </div>
     );
   }
@@ -891,6 +1025,51 @@ function App() {
   if (!user) {
     return <AuthPage />;
   }
+
+  if (userProfile && userProfile.status === 'suspended') {
+    return (
+      <div style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        minHeight: '100vh', background: '#0f172a', color: '#fff', padding: 20, textAlign: 'center'
+      }}>
+        <div style={{ fontSize: 80 }}>⏸️</div>
+        <h2>Account Suspended</h2>
+        <p style={{ color: '#94a3b8', maxWidth: 400 }}>
+          Your account has been temporarily suspended. Please contact admin.
+        </p>
+        <p style={{ fontSize: 12, color: '#64748b', marginTop: 20 }}>
+          Contact: jobinsc@gmail.com
+        </p>
+        <button onClick={handleLogout} style={{
+          marginTop: 20, padding: '10px 20px', background: '#ef4444', color: '#fff',
+          border: 'none', borderRadius: 8, cursor: 'pointer'
+        }}>Logout</button>
+      </div>
+    );
+  }
+
+  if (userProfile && userProfile.status === 'banned') {
+    return (
+      <div style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        minHeight: '100vh', background: '#0f172a', color: '#fff', padding: 20, textAlign: 'center'
+      }}>
+        <div style={{ fontSize: 80 }}>🚫</div>
+        <h2>Access Denied</h2>
+        <p style={{ color: '#94a3b8' }}>Your account has been banned.</p>
+        <button onClick={handleLogout} style={{
+          marginTop: 20, padding: '10px 20px', background: '#ef4444', color: '#fff',
+          border: 'none', borderRadius: 8, cursor: 'pointer'
+        }}>Logout</button>
+      </div>
+    );
+  }
+
+    // Show Admin Panel
+  if (showAdminPanel && isAdmin(user)) {
+    return <AdminPanel currentUser={user} onClose={() => setShowAdminPanel(false)} />;
+  }
+ 
   return (
     <div className="app-container">
       <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
@@ -965,6 +1144,25 @@ function App() {
             }}>
               {user.email}
             </div>
+                        {isAdmin(user) && (
+              <button 
+                onClick={() => setShowAdminPanel(true)}
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  background: 'linear-gradient(135deg, #f59e0b, #ef4444)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 6,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  marginBottom: 6,
+                }}
+              >
+                👑 Admin Panel
+              </button>
+            )}
             <button 
               onClick={handleLogout}
               style={{
@@ -1426,7 +1624,36 @@ function App() {
           onConfirm={confirmImport}
           onCancel={() => { setShowImportPreview(false); setImportPreview([]); }} />
       )}
-      {showCapitalModal && (
+      
+            {showMigrationPrompt && (
+        <div className="modal-overlay" onClick={() => setShowMigrationPrompt(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 500 }}>
+            <div className="modal-header">
+              <h3>☁️ Migrate Local Data to Cloud?</h3>
+            </div>
+            <div className="modal-body">
+              <p style={{ marginBottom: 16 }}>
+                We found <strong>{JSON.parse(localStorage.getItem('tv_trades') || '[]').length} trades</strong> in your browser!
+              </p>
+              <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+                Would you like to move them to the cloud so they're safe and accessible from any device?
+              </p>
+              <div style={{ padding: 12, background: 'rgba(59,130,246,0.1)', borderRadius: 8, marginTop: 16, fontSize: 12 }}>
+                ✨ Cloud data is: Safe, Synced across devices, Private
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => {
+                localStorage.setItem('tv_migrated', 'skipped');
+                setShowMigrationPrompt(false);
+              }}>Skip for now</button>
+              <button className="btn btn-success" onClick={handleMigration}>
+                ☁️ Migrate to Cloud
+              </button>
+            </div>
+          </div>
+        </div>
+      )}{showCapitalModal && (
         <div className="modal-overlay" onClick={() => setShowCapitalModal(false)}>
           <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
             <div className="modal-header">
@@ -1441,7 +1668,11 @@ function App() {
             </div>
             <div className="modal-footer">
               <button className="btn btn-ghost" onClick={() => setShowCapitalModal(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={() => { setShowCapitalModal(false); showMsg('💰 Capital updated!'); }}>Save</button>
+              <button className="btn btn-primary" onClick={async () => { 
+  if (user) await updateUserCapital(user.uid, capital);
+  setShowCapitalModal(false); 
+  showMsg('💰 Capital updated in cloud!'); 
+}}>Save</button>
             </div>
           </div>
         </div>
