@@ -11,6 +11,9 @@ import {
   isToday, getDay, startOfWeek, endOfWeek, addMonths, subMonths,
   differenceInDays, differenceInMonths, differenceInYears
 } from 'date-fns';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { auth } from './firebase';
+import AuthPage from './AuthPage';
 
 // ============ ICONS ============
 const Icons = {
@@ -378,6 +381,23 @@ const autoMatchTrades = (rawTrades) => {
 function App() {
   const [trades, setTrades] = useState(() => getStored('tv_trades', []));
   const [capital, setCapital] = useState(() => getStored('tv_capital', 100000));
+    // ============ FIREBASE AUTH ============
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleLogout = async () => {
+    if (window.confirm('Are you sure you want to logout?')) {
+      await signOut(auth);
+    }
+  };
   const [rules, setRules] = useState(() => getStored('tv_rules', [
     { id: '1', text: 'Always use stop loss', checked: false },
     { id: '2', text: 'Risk max 2% per trade', checked: false },
@@ -851,7 +871,26 @@ function App() {
     import: { t: 'Import Trades', s: 'Upload from broker' },
     settings: { t: 'Settings', s: 'Backup & configuration' },
   }[page] || { t: 'Dashboard', s: '' };
+  // ============ AUTH GATE ============
+  if (authLoading) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '100vh',
+        background: '#0f172a',
+        color: '#fff',
+        fontSize: 18,
+      }}>
+        ⏳ Loading TradeVault...
+      </div>
+    );
+  }
 
+  if (!user) {
+    return <AuthPage />;
+  }
   return (
     <div className="app-container">
       <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
@@ -903,6 +942,44 @@ function App() {
             <div className="capital-amount">₹{fmtNum(Math.round(stats.currentCap))}</div>
             <button className="capital-edit-btn" onClick={() => setShowCapitalModal(true)}>
               Edit starting capital
+            </button>
+          </div>
+          <div style={{ 
+            marginTop: 12, 
+            padding: 12, 
+            background: 'rgba(239,68,68,0.1)', 
+            borderRadius: 8,
+            border: '1px solid rgba(239,68,68,0.3)'
+          }}>
+            <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 6 }}>
+              👤 Logged in as
+            </div>
+            <div style={{ 
+              fontSize: 12, 
+              color: '#fff', 
+              fontWeight: 600, 
+              marginBottom: 8,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap'
+            }}>
+              {user.email}
+            </div>
+            <button 
+              onClick={handleLogout}
+              style={{
+                width: '100%',
+                padding: '8px',
+                background: '#ef4444',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 6,
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              🚪 Logout
             </button>
           </div>
         </div>
