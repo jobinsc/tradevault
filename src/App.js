@@ -36,7 +36,153 @@ const Icons = {
   Copy: () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>,
   Check: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20,6 9,17 4,12"/></svg>,
 };
+// ============ ANALYTICS HELPERS ============
+const calculateAdvancedMetrics = (trades, capital) => {
+  const closed = trades.filter(t => t.status === 'closed');
+  if (closed.length === 0) return null;
 
+  const returns = closed.map(t => Number(t.pnl) || 0);
+  const wins = returns.filter(r => r > 0);
+  const losses = returns.filter(r => r < 0);
+  const totalPnL = returns.reduce((s, r) => s + r, 0);
+  
+  // Expectancy
+  const winRate = wins.length / closed.length;
+  const lossRate = losses.length / closed.length;
+  const avgWin = wins.length > 0 ? wins.reduce((s, r) => s + r, 0) / wins.length : 0;
+  const avgLoss = losses.length > 0 ? Math.abs(losses.reduce((s, r) => s + r, 0) / losses.length) : 0;
+  const expectancy = (winRate * avgWin) - (lossRate * avgLoss);
+  
+  // Standard deviation
+  const mean = totalPnL / returns.length;
+  const variance = returns.reduce((s, r) => s + Math.pow(r - mean, 2), 0) / returns.length;
+  const stdDev = Math.sqrt(variance);
+  
+  // Sharpe Ratio (simplified - assumes 0 risk-free rate)
+  const sharpeRatio = stdDev > 0 ? (mean / stdDev) * Math.sqrt(252) : 0;
+  
+  // Sortino Ratio (only downside deviation)
+  const downsideReturns = returns.filter(r => r < 0);
+  const downsideVariance = downsideReturns.length > 0 ? 
+    downsideReturns.reduce((s, r) => s + Math.pow(r, 2), 0) / downsideReturns.length : 0;
+  const downsideDev = Math.sqrt(downsideVariance);
+  const sortinoRatio = downsideDev > 0 ? (mean / downsideDev) * Math.sqrt(252) : 0;
+
+  // Consecutive wins/losses
+  let maxConsecWins = 0, maxConsecLosses = 0;
+  let currentWins = 0, currentLosses = 0;
+  closed.forEach(t => {
+    if (Number(t.pnl) > 0) {
+      currentWins++;
+      currentLosses = 0;
+      if (currentWins > maxConsecWins) maxConsecWins = currentWins;
+    } else if (Number(t.pnl) < 0) {
+      currentLosses++;
+      currentWins = 0;
+      if (currentLosses > maxConsecLosses) maxConsecLosses = currentLosses;
+    }
+  });
+
+  // R-multiple (using stop loss if available)
+  const rMultiples = closed
+    .filter(t => t.stopLoss && t.entryPrice)
+    .map(t => {
+      const risk = Math.abs(Number(t.entryPrice) - Number(t.stopLoss)) * Number(t.quantity);
+      return risk > 0 ? Number(t.pnl) / risk : 0;
+    });
+  const avgR = rMultiples.length > 0 ? rMultiples.reduce((s, r) => s + r, 0) / rMultiples.length : 0;
+
+  return {
+    expectancy, stdDev, sharpeRatio, sortinoRatio,
+    maxConsecWins, maxConsecLosses, avgR,
+    totalReturn: totalPnL,
+    returnPct: (totalPnL / capital) * 100,
+  };
+};
+
+const getMonthlyPerformance = (trades) => {
+  const closed = trades.filter(t => t.status === 'closed' && t.exitDate);
+  const monthlyMap = {};
+  closed.forEach(t => {
+    const month = t.exitDate.substring(0, 7);
+    if (!monthlyMap[month]) monthlyMap[month] = { pnl: 0, count: 0, wins: 0 };
+    monthlyMap[month].pnl += Number(t.pnl) || 0;
+    monthlyMap[month].count++;
+    if (Number(t.pnl) > 0) monthlyMap[month].wins++;
+  });
+  return Object.entries(monthlyMap)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([month, data]) => ({
+      month: format(parseISO(month + '-01'), 'MMM yy'),
+      monthKey: month,
+      pnl: Math.round(data.pnl),
+      count: data.count,
+      winRate: Math.round((data.wins / data.count) * 100),
+    }));
+};
+
+const getDayOfWeekPerformance = (trades) => {
+  const closed = trades.filter(t => t.status === 'closed' && t.exitDate);
+  const dayMap = { 'Mon': { pnl: 0, count: 0, wins: 0 }, 'Tue': { pnl: 0, count: 0, wins: 0 }, 
+                   'Wed': { pnl: 0, count: 0, wins: 0 }, 'Thu': { pnl: 0, count: 0, wins: 0 }, 
+                   'Fri': { pnl: 0, count: 0, wins: 0 } };
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  closed.forEach(t => {
+    const dayIdx = getDay(parseISO(t.exitDate));
+    const dayName = dayNames[dayIdx];
+    if (dayMap[dayName]) {
+      dayMap[dayName].pnl += Number(t.pnl) || 0;
+      dayMap[dayName].count++;
+      if (Number(t.pnl) > 0) dayMap[dayName].wins++;
+    }
+  });
+  return Object.entries(dayMap).map(([day, data]) => ({
+    day,
+    pnl: Math.round(data.pnl),
+    count: data.count,
+    winRate: data.count > 0 ? Math.round((data.wins / data.count) * 100) : 0,
+  }));
+};
+
+const getSymbolPerformance = (trades) => {
+  const closed = trades.filter(t => t.status === 'closed');
+  const symbolMap = {};
+  closed.forEach(t => {
+    const s = t.symbol;
+    if (!symbolMap[s]) symbolMap[s] = { pnl: 0, count: 0, wins: 0 };
+    symbolMap[s].pnl += Number(t.pnl) || 0;
+    symbolMap[s].count++;
+    if (Number(t.pnl) > 0) symbolMap[s].wins++;
+  });
+  return Object.entries(symbolMap)
+    .map(([symbol, data]) => ({
+      symbol,
+      pnl: Math.round(data.pnl),
+      count: data.count,
+      winRate: Math.round((data.wins / data.count) * 100),
+      avgPnL: Math.round(data.pnl / data.count),
+    }))
+    .sort((a, b) => b.pnl - a.pnl);
+};
+
+const getDrawdownData = (trades, capital) => {
+  const closed = trades.filter(t => t.status === 'closed' && t.exitDate)
+    .sort((a, b) => a.exitDate.localeCompare(b.exitDate));
+  let running = capital;
+  let peak = capital;
+  const data = [];
+  closed.forEach(t => {
+    running += (Number(t.pnl) || 0) - (Number(t.charges) || 0);
+    if (running > peak) peak = running;
+    const drawdown = ((peak - running) / peak) * 100;
+    data.push({
+      date: format(parseISO(t.exitDate), 'dd MMM'),
+      capital: Math.round(running),
+      drawdown: Math.round(drawdown * 100) / 100,
+    });
+  });
+  return data;
+};
 // ============ CONSTANTS ============
 const TRADE_TYPES = [
   { value: 'scalp', label: '⚡ Scalping' },
@@ -698,6 +844,8 @@ function App() {
     trades: { t: 'Trade Log', s: 'All your trades' },
     portfolio: { t: 'Portfolio', s: 'Long-term & investment holdings' },
     analytics: { t: 'Analytics', s: 'Deep performance insights' },
+    reports: { t: 'Detailed Report', s: 'Institutional-grade performance analysis' },
+    synopsis: { t: 'Quick Synopsis', s: 'Executive summary at a glance' },
     calendar: { t: 'Calendar', s: 'Daily P&L visualization' },
     rules: { t: 'Trading Rules', s: 'Pre-trade checklist' },
     import: { t: 'Import Trades', s: 'Upload from broker' },
@@ -721,9 +869,11 @@ function App() {
           <div className="nav-section-title">Main</div>
           {[
             { id: 'dashboard', icon: <Icons.Dashboard />, label: 'Dashboard' },
-            { id: 'trades', icon: <Icons.Trade />, label: 'Trade Log', badge: trades.length },
-            { id: 'portfolio', icon: <Icons.Portfolio />, label: 'Portfolio', badge: portfolio.length },
+            { id: 'trades', icon: <Icons.Trade />, label: 'Trade Log' },
+            { id: 'portfolio', icon: <Icons.Portfolio />, label: 'Portfolio' },
             { id: 'analytics', icon: <Icons.Analytics />, label: 'Analytics' },
+{ id: 'reports', icon: <Icons.Analytics />, label: 'Detailed Report' },
+{ id: 'synopsis', icon: <Icons.Analytics />, label: 'Quick Synopsis' },
             { id: 'calendar', icon: <Icons.Calendar />, label: 'Calendar' },
           ].map(item => (
             <div key={item.id} className={`nav-item ${page === item.id ? 'active' : ''}`}
@@ -1142,6 +1292,11 @@ function App() {
           {page === 'import' && <ImportPage onImport={importBrokerCSV} />}
 
           {/* SETTINGS */}
+                    {/* DETAILED REPORT PAGE */}
+          {page === 'reports' && <DetailedReport trades={trades} capital={capital} stats={stats} />}
+
+          {/* SYNOPSIS PAGE */}
+          {page === 'synopsis' && <SynopsisReport trades={trades} capital={capital} stats={stats} />}
           {page === 'settings' && (
             <>
               <div className="import-export-section">
@@ -1764,5 +1919,412 @@ function ViewTradeModal({ trade, onClose, onEdit }) {
     </div>
   );
 }
+// ============ DETAILED REPORT ============
+function DetailedReport({ trades, capital, stats }) {
+  const advanced = useMemo(() => calculateAdvancedMetrics(trades, capital), [trades, capital]);
+  const monthlyPerf = useMemo(() => getMonthlyPerformance(trades), [trades]);
+  const dayPerf = useMemo(() => getDayOfWeekPerformance(trades), [trades]);
+  const symbolPerf = useMemo(() => getSymbolPerformance(trades), [trades]);
+  const drawdownData = useMemo(() => getDrawdownData(trades, capital), [trades, capital]);
 
+  const closed = trades.filter(t => t.status === 'closed');
+  
+  if (closed.length === 0) {
+    return (
+      <div className="empty-state">
+        <div className="empty-state-icon">📊</div>
+        <h3>No Data Yet</h3>
+        <p>Close some trades to see detailed analytics</p>
+      </div>
+    );
+  }
+
+  const bestTrade = closed.reduce((best, t) => Number(t.pnl) > Number(best.pnl || 0) ? t : best, {});
+  const worstTrade = closed.reduce((worst, t) => Number(t.pnl) < Number(worst.pnl || 0) ? t : worst, {});
+
+  return (
+    <div>
+      {/* HEADER */}
+      <div style={{ background: 'linear-gradient(135deg, #1e293b, #0f172a)', borderRadius: 16, padding: 24, marginBottom: 20, border: '1px solid var(--border-color)' }}>
+        <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 6 }}>📊 Institutional Performance Report</h2>
+        <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+          Generated on {format(new Date(), 'dd MMMM yyyy, HH:mm')} | {closed.length} closed trades analyzed
+        </p>
+      </div>
+
+      {/* ADVANCED METRICS */}
+      <div className="chart-card" style={{ marginBottom: 20 }}>
+        <div className="chart-card-title">🎯 Advanced Performance Metrics</div>
+        <div className="stats-grid">
+          <div className="stat-card blue">
+            <div className="stat-card-label">Expectancy per Trade</div>
+            <div className={`stat-card-value ${advanced.expectancy >= 0 ? 'green' : 'red'}`}>
+              {fmtCurrencyWithSign(Math.round(advanced.expectancy))}
+            </div>
+            <div className="stat-card-change" style={{ color: 'var(--text-muted)' }}>
+              Expected profit per trade
+            </div>
+          </div>
+          <div className="stat-card purple">
+            <div className="stat-card-label">Sharpe Ratio</div>
+            <div className="stat-card-value">{advanced.sharpeRatio.toFixed(2)}</div>
+            <div className="stat-card-change" style={{ color: advanced.sharpeRatio > 1 ? 'var(--accent-green)' : 'var(--text-muted)' }}>
+              {advanced.sharpeRatio > 2 ? '🏆 Excellent' : advanced.sharpeRatio > 1 ? '✅ Good' : advanced.sharpeRatio > 0 ? '⚠️ Average' : '❌ Poor'}
+            </div>
+          </div>
+          <div className="stat-card gold">
+            <div className="stat-card-label">Sortino Ratio</div>
+            <div className="stat-card-value">{advanced.sortinoRatio.toFixed(2)}</div>
+            <div className="stat-card-change" style={{ color: 'var(--text-muted)' }}>
+              Downside risk-adjusted
+            </div>
+          </div>
+          <div className="stat-card cyan">
+            <div className="stat-card-label">Standard Deviation</div>
+            <div className="stat-card-value">₹{fmtNum(Math.round(advanced.stdDev))}</div>
+            <div className="stat-card-change" style={{ color: 'var(--text-muted)' }}>
+              Volatility per trade
+            </div>
+          </div>
+          <div className="stat-card green">
+            <div className="stat-card-label">Max Consecutive Wins</div>
+            <div className="stat-card-value green">{advanced.maxConsecWins} 🔥</div>
+          </div>
+          <div className="stat-card red">
+            <div className="stat-card-label">Max Consecutive Losses</div>
+            <div className="stat-card-value red">{advanced.maxConsecLosses} 💔</div>
+          </div>
+          <div className="stat-card purple">
+            <div className="stat-card-label">Avg R-Multiple</div>
+            <div className={`stat-card-value ${advanced.avgR >= 0 ? 'green' : 'red'}`}>{advanced.avgR.toFixed(2)}R</div>
+          </div>
+          <div className="stat-card blue">
+            <div className="stat-card-label">Total Return %</div>
+            <div className={`stat-card-value ${advanced.returnPct >= 0 ? 'green' : 'red'}`}>
+              {advanced.returnPct >= 0 ? '+' : ''}{advanced.returnPct.toFixed(2)}%
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* DRAWDOWN CHART */}
+      {drawdownData.length > 0 && (
+        <div className="chart-card" style={{ marginBottom: 20 }}>
+          <div className="chart-card-title">📉 Drawdown Analysis</div>
+          <ResponsiveContainer width="100%" height={280}>
+            <AreaChart data={drawdownData}>
+              <defs>
+                <linearGradient id="ddGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#ef4444" stopOpacity={0.4}/>
+                  <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#2a3150" />
+              <XAxis dataKey="date" tick={{ fill: '#64748b', fontSize: 10 }} />
+              <YAxis tick={{ fill: '#64748b', fontSize: 10 }} label={{ value: '%', position: 'insideLeft', fill: '#64748b' }} />
+              <Tooltip contentStyle={{ background: '#1a1f35', border: '1px solid #2a3150', borderRadius: 8 }} />
+              <Area type="monotone" dataKey="drawdown" stroke="#ef4444" fillOpacity={1} fill="url(#ddGrad)" strokeWidth={2} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* MONTHLY PERFORMANCE */}
+      {monthlyPerf.length > 0 && (
+        <div className="chart-card" style={{ marginBottom: 20 }}>
+          <div className="chart-card-title">📅 Monthly Performance Heatmap</div>
+          <ResponsiveContainer width="100%" height={250}>
+            <BarChart data={monthlyPerf}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#2a3150" />
+              <XAxis dataKey="month" tick={{ fill: '#64748b', fontSize: 11 }} />
+              <YAxis tick={{ fill: '#64748b', fontSize: 10 }} />
+              <Tooltip contentStyle={{ background: '#1a1f35', border: '1px solid #2a3150', borderRadius: 8 }} />
+              <Bar dataKey="pnl" radius={[4, 4, 0, 0]}>
+                {monthlyPerf.map((e, i) => <Cell key={i} fill={e.pnl >= 0 ? '#10b981' : '#ef4444'} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          <div style={{ marginTop: 16, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8 }}>
+            {monthlyPerf.map((m, i) => (
+              <div key={i} style={{ padding: 10, background: 'var(--bg-input)', borderRadius: 8, textAlign: 'center' }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>{m.month}</div>
+                <div className={m.pnl >= 0 ? 'pnl-positive' : 'pnl-negative'} style={{ fontSize: 14, marginTop: 2 }}>
+                  {fmtCurrencyWithSign(m.pnl)}
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
+                  {m.count} trades | {m.winRate}%
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* DAY OF WEEK ANALYSIS */}
+      <div className="chart-card" style={{ marginBottom: 20 }}>
+        <div className="chart-card-title">📆 Day of Week Performance</div>
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart data={dayPerf}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#2a3150" />
+            <XAxis dataKey="day" tick={{ fill: '#94a3b8', fontSize: 12, fontWeight: 600 }} />
+            <YAxis tick={{ fill: '#64748b', fontSize: 10 }} />
+            <Tooltip contentStyle={{ background: '#1a1f35', border: '1px solid #2a3150', borderRadius: 8 }} />
+            <Bar dataKey="pnl" radius={[4, 4, 0, 0]}>
+              {dayPerf.map((e, i) => <Cell key={i} fill={e.pnl >= 0 ? '#10b981' : '#ef4444'} />)}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+        <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
+          {dayPerf.map((d, i) => (
+            <div key={i} style={{ padding: 10, background: 'var(--bg-input)', borderRadius: 8, textAlign: 'center' }}>
+              <div style={{ fontSize: 12, fontWeight: 700 }}>{d.day}</div>
+              <div className={d.pnl >= 0 ? 'pnl-positive' : 'pnl-negative'} style={{ fontSize: 13, marginTop: 4 }}>
+                {fmtCurrencyWithSign(d.pnl)}
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{d.count} trades</div>
+              <div style={{ fontSize: 10, color: d.winRate >= 50 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                WR: {d.winRate}%
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* SYMBOL PERFORMANCE */}
+      {symbolPerf.length > 0 && (
+        <div className="chart-card" style={{ marginBottom: 20 }}>
+          <div className="chart-card-title">💼 Symbol-wise Performance (Top {Math.min(10, symbolPerf.length)})</div>
+          <div className="trades-table-wrapper">
+            <table className="trades-table">
+              <thead>
+                <tr>
+                  <th>Rank</th>
+                  <th>Symbol</th>
+                  <th>Trades</th>
+                  <th>Win Rate</th>
+                  <th>Avg P&L</th>
+                  <th>Total P&L</th>
+                </tr>
+              </thead>
+              <tbody>
+                {symbolPerf.slice(0, 10).map((s, i) => (
+                  <tr key={i}>
+                    <td style={{ fontWeight: 700 }}>{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}</td>
+                    <td style={{ fontWeight: 700 }}>{s.symbol}</td>
+                    <td>{s.count}</td>
+                    <td style={{ color: s.winRate >= 50 ? 'var(--accent-green)' : 'var(--accent-red)' }}>{s.winRate}%</td>
+                    <td className={s.avgPnL >= 0 ? 'pnl-positive' : 'pnl-negative'}>{fmtCurrencyWithSign(s.avgPnL)}</td>
+                    <td className={s.pnl >= 0 ? 'pnl-positive' : 'pnl-negative'} style={{ fontWeight: 700 }}>{fmtCurrencyWithSign(s.pnl)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* BEST & WORST TRADES */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, marginBottom: 20 }}>
+        <div className="chart-card" style={{ borderTop: '3px solid var(--accent-green)' }}>
+          <div className="chart-card-title">🏆 Best Trade</div>
+          {bestTrade.symbol && (
+            <>
+              <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--accent-green)' }}>{bestTrade.symbol}</div>
+              <div style={{ fontSize: 32, fontWeight: 800, marginTop: 8 }} className="pnl-positive">
+                {fmtCurrencyWithSign(bestTrade.pnl)}
+              </div>
+              <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 13 }}>
+                <div><span style={{ color: 'var(--text-muted)' }}>Entry:</span> ₹{fmtNum(bestTrade.entryPrice)}</div>
+                <div><span style={{ color: 'var(--text-muted)' }}>Exit:</span> ₹{fmtNum(bestTrade.exitPrice)}</div>
+                <div><span style={{ color: 'var(--text-muted)' }}>Qty:</span> {bestTrade.quantity}</div>
+                <div><span style={{ color: 'var(--text-muted)' }}>Type:</span> {bestTrade.tradeType}</div>
+              </div>
+            </>
+          )}
+        </div>
+        <div className="chart-card" style={{ borderTop: '3px solid var(--accent-red)' }}>
+          <div className="chart-card-title">💔 Worst Trade</div>
+          {worstTrade.symbol && (
+            <>
+              <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--accent-red)' }}>{worstTrade.symbol}</div>
+              <div style={{ fontSize: 32, fontWeight: 800, marginTop: 8 }} className="pnl-negative">
+                {fmtCurrencyWithSign(worstTrade.pnl)}
+              </div>
+              <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 13 }}>
+                <div><span style={{ color: 'var(--text-muted)' }}>Entry:</span> ₹{fmtNum(worstTrade.entryPrice)}</div>
+                <div><span style={{ color: 'var(--text-muted)' }}>Exit:</span> ₹{fmtNum(worstTrade.exitPrice)}</div>
+                <div><span style={{ color: 'var(--text-muted)' }}>Qty:</span> {worstTrade.quantity}</div>
+                <div><span style={{ color: 'var(--text-muted)' }}>Type:</span> {worstTrade.tradeType}</div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* SUMMARY FOOTER */}
+      <div style={{ padding: 20, background: 'linear-gradient(135deg, rgba(59,130,246,0.1), rgba(139,92,246,0.1))', borderRadius: 12, textAlign: 'center', border: '1px solid var(--border-color)' }}>
+        <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+          📊 This report is generated in real-time based on your trading data
+        </p>
+        <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={() => window.print()}>
+          🖨️ Print / Save as PDF
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ============ SYNOPSIS REPORT ============
+function SynopsisReport({ trades, capital, stats }) {
+  const closed = trades.filter(t => t.status === 'closed');
+  const advanced = useMemo(() => calculateAdvancedMetrics(trades, capital), [trades, capital]);
+  
+  if (closed.length === 0) {
+    return (
+      <div className="empty-state">
+        <div className="empty-state-icon">📄</div>
+        <h3>No Data Yet</h3>
+        <p>Close some trades to see synopsis</p>
+      </div>
+    );
+  }
+
+  const performanceGrade = 
+    stats.winRate >= 60 && stats.rr >= 2 ? { grade: 'A+', color: '#10b981', label: 'Excellent' } :
+    stats.winRate >= 50 && stats.rr >= 1.5 ? { grade: 'A', color: '#10b981', label: 'Very Good' } :
+    stats.winRate >= 40 && stats.rr >= 1 ? { grade: 'B', color: '#3b82f6', label: 'Good' } :
+    stats.winRate >= 30 ? { grade: 'C', color: '#f59e0b', label: 'Average' } :
+    { grade: 'D', color: '#ef4444', label: 'Needs Improvement' };
+
+  return (
+    <div style={{ maxWidth: 900, margin: '0 auto' }}>
+      {/* REPORT HEADER */}
+      <div style={{ background: 'linear-gradient(135deg, #1e293b, #0f172a)', borderRadius: 16, padding: 32, marginBottom: 20, border: '2px solid var(--border-color)', textAlign: 'center' }}>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 8 }}>
+          TradeVault Pro Journal
+        </div>
+        <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 8 }}>Trading Performance Synopsis</h1>
+        <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+          {format(new Date(), 'dd MMMM yyyy')} • Period: All Time
+        </p>
+      </div>
+
+      {/* PERFORMANCE GRADE */}
+      <div style={{ background: 'var(--bg-card)', borderRadius: 16, padding: 32, marginBottom: 20, border: '1px solid var(--border-color)', textAlign: 'center' }}>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 2 }}>
+          Overall Performance Grade
+        </div>
+        <div style={{ fontSize: 80, fontWeight: 900, color: performanceGrade.color, lineHeight: 1, margin: '10px 0' }}>
+          {performanceGrade.grade}
+        </div>
+        <div style={{ fontSize: 16, fontWeight: 600, color: performanceGrade.color }}>
+          {performanceGrade.label}
+        </div>
+      </div>
+
+      {/* KEY METRICS */}
+      <div style={{ background: 'var(--bg-card)', borderRadius: 16, padding: 24, marginBottom: 20, border: '1px solid var(--border-color)' }}>
+        <div className="chart-card-title" style={{ marginBottom: 20 }}>📊 Key Performance Indicators</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16 }}>
+          <div style={{ padding: 16, background: 'var(--bg-input)', borderRadius: 12, borderLeft: '3px solid var(--accent-blue)' }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>Total P&L</div>
+            <div className={stats.netPnL >= 0 ? 'pnl-positive' : 'pnl-negative'} style={{ fontSize: 22, fontWeight: 800, marginTop: 4 }}>
+              {fmtCurrencyWithSign(stats.netPnL)}
+            </div>
+          </div>
+          <div style={{ padding: 16, background: 'var(--bg-input)', borderRadius: 12, borderLeft: '3px solid var(--accent-green)' }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>Win Rate</div>
+            <div style={{ fontSize: 22, fontWeight: 800, marginTop: 4 }}>{stats.winRate.toFixed(1)}%</div>
+          </div>
+          <div style={{ padding: 16, background: 'var(--bg-input)', borderRadius: 12, borderLeft: '3px solid var(--accent-purple)' }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>Total Trades</div>
+            <div style={{ fontSize: 22, fontWeight: 800, marginTop: 4 }}>{stats.total}</div>
+          </div>
+          <div style={{ padding: 16, background: 'var(--bg-input)', borderRadius: 12, borderLeft: '3px solid var(--accent-yellow)' }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>Risk:Reward</div>
+            <div style={{ fontSize: 22, fontWeight: 800, marginTop: 4 }}>{stats.rr.toFixed(2)}</div>
+          </div>
+          <div style={{ padding: 16, background: 'var(--bg-input)', borderRadius: 12, borderLeft: '3px solid var(--accent-cyan)' }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>Profit Factor</div>
+            <div style={{ fontSize: 22, fontWeight: 800, marginTop: 4 }}>{stats.profitFactor > 900 ? '∞' : stats.profitFactor.toFixed(2)}</div>
+          </div>
+          <div style={{ padding: 16, background: 'var(--bg-input)', borderRadius: 12, borderLeft: '3px solid var(--accent-red)' }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>Max Drawdown</div>
+            <div className="pnl-negative" style={{ fontSize: 22, fontWeight: 800, marginTop: 4 }}>{stats.maxDD.toFixed(1)}%</div>
+          </div>
+        </div>
+      </div>
+
+      {/* WIN/LOSS BREAKDOWN */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+        <div style={{ background: 'rgba(16,185,129,0.1)', borderRadius: 12, padding: 20, border: '1px solid rgba(16,185,129,0.3)' }}>
+          <div style={{ fontSize: 12, color: 'var(--accent-green)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1 }}>Winning Trades</div>
+          <div style={{ fontSize: 32, fontWeight: 800, color: 'var(--accent-green)', marginTop: 4 }}>{stats.wins}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+            Avg Win: <strong style={{ color: 'var(--accent-green)' }}>{fmtCurrency(stats.avgWin)}</strong>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+            Best: <strong style={{ color: 'var(--accent-green)' }}>{fmtCurrencyWithSign(stats.biggestWin)}</strong>
+          </div>
+        </div>
+        <div style={{ background: 'rgba(239,68,68,0.1)', borderRadius: 12, padding: 20, border: '1px solid rgba(239,68,68,0.3)' }}>
+          <div style={{ fontSize: 12, color: 'var(--accent-red)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1 }}>Losing Trades</div>
+          <div style={{ fontSize: 32, fontWeight: 800, color: 'var(--accent-red)', marginTop: 4 }}>{stats.losses}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+            Avg Loss: <strong style={{ color: 'var(--accent-red)' }}>-{fmtCurrency(stats.avgLoss)}</strong>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+            Worst: <strong style={{ color: 'var(--accent-red)' }}>{fmtCurrencyWithSign(stats.biggestLoss)}</strong>
+          </div>
+        </div>
+      </div>
+
+      {/* INSIGHTS */}
+      <div style={{ background: 'var(--bg-card)', borderRadius: 16, padding: 24, marginBottom: 20, border: '1px solid var(--border-color)' }}>
+        <div className="chart-card-title" style={{ marginBottom: 16 }}>💡 Key Insights</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ padding: 12, background: 'var(--bg-input)', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontSize: 20 }}>{stats.winRate >= 50 ? '✅' : '⚠️'}</span>
+            <span style={{ fontSize: 13 }}>
+              Your win rate is <strong style={{ color: stats.winRate >= 50 ? 'var(--accent-green)' : 'var(--accent-red)' }}>{stats.winRate.toFixed(1)}%</strong>
+              {stats.winRate >= 50 ? ' - Above average!' : ' - Focus on trade selection'}
+            </span>
+          </div>
+          <div style={{ padding: 12, background: 'var(--bg-input)', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontSize: 20 }}>{stats.rr >= 2 ? '🎯' : stats.rr >= 1 ? '✅' : '⚠️'}</span>
+            <span style={{ fontSize: 13 }}>
+              Risk-Reward is <strong>{stats.rr.toFixed(2)}</strong>
+              {stats.rr >= 2 ? ' - Excellent!' : stats.rr >= 1 ? ' - Good balance' : ' - Aim for 1:2 or higher'}
+            </span>
+          </div>
+          <div style={{ padding: 12, background: 'var(--bg-input)', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontSize: 20 }}>{advanced && advanced.expectancy >= 0 ? '💰' : '📉'}</span>
+            <span style={{ fontSize: 13 }}>
+              Expected profit per trade: <strong className={advanced && advanced.expectancy >= 0 ? 'pnl-positive' : 'pnl-negative'}>
+                {advanced ? fmtCurrencyWithSign(Math.round(advanced.expectancy)) : '-'}
+              </strong>
+            </span>
+          </div>
+          <div style={{ padding: 12, background: 'var(--bg-input)', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontSize: 20 }}>{stats.maxDD <= 10 ? '🛡️' : stats.maxDD <= 20 ? '⚠️' : '🚨'}</span>
+            <span style={{ fontSize: 13 }}>
+              Maximum drawdown was <strong className="pnl-negative">{stats.maxDD.toFixed(1)}%</strong>
+              {stats.maxDD <= 10 ? ' - Well controlled' : stats.maxDD <= 20 ? ' - Monitor closely' : ' - High risk!'}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* PRINT BUTTON */}
+      <div style={{ textAlign: 'center', padding: 20 }}>
+        <button className="btn btn-primary" onClick={() => window.print()}>
+          🖨️ Print / Save as PDF
+        </button>
+        <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 12 }}>
+          Generated by TradeVault Pro Journal • {format(new Date(), 'dd MMM yyyy HH:mm')}
+        </p>
+      </div>
+    </div>
+  );
+}
 export default App;
