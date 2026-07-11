@@ -15,6 +15,7 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth, isAdmin } from './firebase';
 import AuthPage from './AuthPage';
 import AdminPanel from './AdminPanel';import SymbolAutocomplete from './SymbolAutocomplete';
+import { getSectorForSymbol, getAllSectors, getSectorColor } from './sectorsDatabase';
 import 
 {
   createUserProfile,
@@ -2843,6 +2844,22 @@ function DetailedReport({ trades, capital, stats }) {
 
 // ============ SYNOPSIS REPORT ============
 function SynopsisReport({ trades, capital, stats }) {
+   const [symbolQuery, setSymbolQuery] = React.useState('');
+  const [symbolSearching, setSymbolSearching] = React.useState(false);
+  const [symbolResults, setSymbolResults] = React.useState([]);
+  const [symbolError, setSymbolError] = React.useState('');
+  const [selectedSymbol, setSelectedSymbol] = React.useState(null);
+    const [showSymbolDrop, setShowSymbolDrop] = React.useState(false);
+  const [symbolPrice, setSymbolPrice] = React.useState(null);
+  const [symbolLoading, setSymbolLoading] = React.useState(false);
+  const [symbolData, setSymbolData] = React.useState(null);
+  const [showSymbolModal, setShowSymbolModal] = React.useState(false);
+  const [symbolStats, setSymbolStats] = React.useState(null);
+  const [symbolTrades, setSymbolTrades] = React.useState([]);
+  const [symbolFilter, setSymbolFilter] = React.useState('all');
+  const [symbolSort, setSymbolSort] = React.useState('date');
+  const symbolInputRef = React.useRef(null);
+  const symbolDropRef = React.useRef(null);
   const closed = trades.filter(t => t.status === 'closed');
   const advanced = useMemo(() => calculateAdvancedMetrics(trades, capital), [trades, capital]);
   
@@ -2992,124 +3009,8 @@ function SynopsisReport({ trades, capital, stats }) {
         </p>
       </div>
       
-    {/* ============ WATCHLIST SECTION ============ */}
-    <div style={{ margin: '20px 0', padding: '16px', background: '#f8f9fa', borderRadius: '8px' }}>
-      <h3 style={{ marginBottom: '12px', color: '#333' }}>Watchlist</h3>
-
-      {/* Symbol Search Input */}
-      <div style={{ position: 'relative', marginBottom: '12px' }}>
-        <input
-          type="text"
-          value={symbolQuery}
-          onChange={(e) => handleSymbolSearch(e.target.value)}
-          placeholder="Search for a symbol..."
-          style={{
-            width: '100%',
-            padding: '8px 12px',
-            border: '1px solid #ddd',
-            borderRadius: '4px',
-            fontSize: '14px'
-          }}
-        />
-        {symbolSearching && (
-          <div style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)' }}>
-            <span>🔍</span>
-          </div>
-        )}
-        {showSymbolDrop && symbolResults.length > 0 && (
-          <div
-            style={{
-              position: 'absolute',
-              top: '100%',
-              left: 0,
-              right: 0,
-              maxHeight: '200px',
-              overflowY: 'auto',
-              border: '1px solid #ddd',
-              borderRadius: '4px',
-              background: '#fff',
-              zIndex: 1000,
-              boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-            }}
-          >
-            {symbolResults.map((result) => (
-              <div
-                key={result.symbol}
-                onClick={() => selectSymbol(result.symbol)}
-                style={{
-                  padding: '8px 12px',
-                  cursor: 'pointer',
-                  borderBottom: '1px solid #eee',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
-                }}
-              >
-                <span>{result.symbol}</span>
-                <span style={{ color: '#666', fontSize: '12px' }}>{result.name}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Add to Watchlist Button */}
-      {symbolQuery && (
-        <button
-          onClick={addToWatchlistHandler}
-          style={{
-            background: '#4CAF50',
-            color: '#fff',
-            border: 'none',
-            padding: '8px 16px',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            marginBottom: '12px'
-          }}
-        >
-          Add to Watchlist
-        </button>
-      )}
-
-      {/* Watchlist Items */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
-        {watchlist.length === 0 ? (
-          <p style={{ color: '#666', fontSize: '14px' }}>Your watchlist is empty. Add symbols to track them!</p>
-        ) : (
-          watchlist.map((item) => (
-            <div
-              key={item.symbol}
-              style={{
-                background: '#fff',
-                border: '1px solid #ddd',
-                borderRadius: '4px',
-                padding: '8px 12px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}
-            >
-              <span style={{ fontWeight: 'bold' }}>{item.symbol}</span>
-              <button
-                onClick={() => removeFromWatchlistHandler(item.symbol)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  color: '#f44336',
-                  fontSize: '14px'
-                }}
-              >
-                ✕
-              </button>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-
-
     </div>
   );
 }
+
 export default App;
