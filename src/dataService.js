@@ -1,21 +1,18 @@
-import {
-  createUserProfile,
-  getUserProfile,
-  getTrades,
-  addTrade as addTradeToCloud,
-  updateTrade as updateTradeInCloud,
-  deleteTrade as deleteTradeFromCloud,
-  bulkAddTrades,
-  updateUserCapital,
-  getRules as getRulesFromCloud,
-  saveRules as saveRulesToCloud,
-  migrateLocalDataToCloud,
-  getWatchlist,
-  addToWatchlist,
-  removeFromWatchlist,
-  updateWatchlistItem,
-} from './dataService';
-
+import { 
+  doc, 
+  getDoc, 
+  setDoc, 
+  updateDoc, 
+  deleteDoc, 
+  collection, 
+  getDocs, 
+  addDoc, 
+  query, 
+  where, 
+  orderBy, 
+  writeBatch,
+  serverTimestamp 
+} from 'firebase/firestore';
 import { db, USER_STATUS } from './firebase';
 
 // ============ USER PROFILE ============

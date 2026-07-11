@@ -1,10 +1,3 @@
-import {
-  fetchMultipleStockPrices,
-  calculateLivePnL,
-  calculateChangePercent,
-  searchStocks,
-} from './priceService';
-
 
 // src/priceService.js
 // Fetches live stock prices using NSE India API (via proxy) + Yahoo Finance fallback
