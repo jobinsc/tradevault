@@ -1,0 +1,162 @@
+═══════════════════════════════════════════════════
+🔐 TRADEVAULT - CREDENTIALS & IMPORTANT INFO
+═══════════════════════════════════════════════════
+Created: [Today's Date]
+Owner: Jobin S C
+═══════════════════════════════════════════════════
+
+📍 CODE LOCATIONS
+───────────────────────────────────────────────────
+• Local:    C:\Users\jobin\Desktop\tradevault
+• GitHub:   https://github.com/jobinsc/tradevault
+• Live:     https://tradevault-ndnt.vercel.app
+
+🔑 ADMIN ACCOUNT
+───────────────────────────────────────────────────
+• Email:    jobinsc@gmail.com
+• Password: [Your password]
+• Role:     Admin (jobinsc@gmail.com in code)
+
+🔥 FIREBASE
+───────────────────────────────────────────────────
+• Project:     Tradevault
+• Project ID:  tradevault-994d3
+• Console:     https://console.firebase.google.com/u/0/project/tradevault-994d3
+• Plan:        Spark (Free)
+
+📊 FIREBASE CONFIG (in src/firebase.js):
+• API Key:            AIzaSyDls6Fe9iC5sEk8KWAULUxFO3I6t_ZyawU
+• Auth Domain:        tradevault-994d3.firebaseapp.com
+• Project ID:         tradevault-994d3
+• Storage Bucket:     tradevault-994d3.firebasestorage.app
+• Messaging Sender:   1091497428956
+• App ID:             1:1091497428956:web:afa093f2dbe21b7a5fb119
+• Measurement ID:     G-MJ7S998SJ4
+
+📈 TWELVE DATA (Stock API)
+───────────────────────────────────────────────────
+• API Key:  6045bda4f0784423b5ecac3d445abdab
+• Website:  https://twelvedata.com/account
+• Login:    jobinsc@gmail.com
+• Plan:     Free (800 req/day)
+• Note:     Indian stocks require paid plan
+
+🚀 VERCEL (Hosting)
+───────────────────────────────────────────────────
+• Project:  tradevault-ndnt
+• URL:      https://tradevault-ndnt.vercel.app
+• Console:  https://vercel.com/cheeco1/tradevault-ndnt
+• Plan:     Hobby (Free)
+
+🐙 GITHUB
+───────────────────────────────────────────────────
+• Username:  jobinsc
+• Repo:      https://github.com/jobinsc/tradevault
+• Branch:    main
+
+═══════════════════════════════════════════════════
+📋 FEATURES BUILT (v1.0)
+═══════════════════════════════════════════════════
+
+✅ FRONTEND
+• React app with beautiful dark UI
+• Dashboard with stats, charts, analytics
+• Trade Log with filters
+• Portfolio management
+• Analytics page
+• Detailed Reports
+• Quick Synopsis
+• Calendar view
+• Trading Rules checklist
+• Import CSV (Zerodha/Upstox auto-match)
+• Settings page
+
+✅ AUTHENTICATION
+• Email/Password login
+• Google Sign-In
+• Password reset
+• Multi-user support
+• Access control (Active/Suspended/Banned)
+
+✅ CLOUD STORAGE (Firebase)
+• All trades saved to cloud
+• Multi-device sync
+• User profiles
+• Trading rules
+• Auto-migration from localStorage
+
+✅ ADMIN PANEL
+• View all users
+• Suspend/Ban/Delete users
+• User statistics
+• Search & filter
+
+✅ LIVE FEATURES
+• Live stock prices (Yahoo Finance)
+• Live P&L calculation
+• Auto-refresh every 30 seconds
+• Stock symbol autocomplete search
+
+═══════════════════════════════════════════════════
+🔧 HOW TO RUN LOCALLY
+═══════════════════════════════════════════════════
+
+1. Open VS Code
+2. Open folder: C:\Users\jobin\Desktop\tradevault
+3. Open terminal (Ctrl + `)
+4. Run: npm start
+5. Opens at: http://localhost:3000
+
+═══════════════════════════════════════════════════
+🚀 HOW TO DEPLOY CHANGES
+═══════════════════════════════════════════════════
+
+1. Save all files (Ctrl + S)
+2. Open terminal in VS Code
+3. Run these commands:
+   git add .
+   git commit -m "describe your changes"
+   git push
+4. Wait 2-3 min
+5. Vercel auto-deploys
+6. Check live at: https://tradevault-ndnt.vercel.app
+
+═══════════════════════════════════════════════════
+📁 IMPORTANT FILES
+═══════════════════════════════════════════════════
+
+src/
+├── App.js                  - Main app (all logic)
+├── AuthPage.js             - Login/Signup page
+├── AdminPanel.js           - Admin dashboard
+├── firebase.js             - Firebase configuration
+├── dataService.js          - Cloud database functions
+├── priceService.js         - Live stock prices
+├── stocksDatabase.js       - Stock search database
+├── index.js                - React entry point
+└── index.css               - All styling
+
+═══════════════════════════════════════════════════
+🎯 NEXT FEATURES TO BUILD (Ideas)
+═══════════════════════════════════════════════════
+
+• Payment integration (Razorpay)
+• Mobile app (PWA/React Native)
+• Notifications
+• AI trade analysis
+• Watchlist
+• Price alerts
+• Advanced charts
+• Social features
+• Email reports
+• Referral system
+
+═══════════════════════════════════════════════════
+🆘 EMERGENCY CONTACTS
+═══════════════════════════════════════════════════
+
+• Firebase Support:  https://firebase.google.com/support
+• Vercel Support:    https://vercel.com/support
+• GitHub Support:    https://support.github.com
+
+═══════════════════════════════════════════════════

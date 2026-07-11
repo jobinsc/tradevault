@@ -1,3 +1,11 @@
+import {
+  fetchMultipleStockPrices,
+  calculateLivePnL,
+  calculateChangePercent,
+  searchStocks,
+} from './priceService';
+
+
 // src/priceService.js
 // Fetches live stock prices using NSE India API (via proxy) + Yahoo Finance fallback
 
@@ -113,4 +121,66 @@ export const calculateChangePercent = (currentPrice, entryPrice) => {
 // Clear cache (useful for manual refresh)
 export const clearPriceCache = () => {
   Object.keys(priceCache).forEach(key => delete priceCache[key]);
+};
+
+// ─────────────────────────────────────────────
+// LIVE STOCK SEARCH via Yahoo Finance
+// ─────────────────────────────────────────────
+
+const SEARCH_CACHE = {};
+const SEARCH_CACHE_TTL = 15000;
+
+export const searchStocks = async (query) => {
+  if (!query || query.trim().length < 1) return [];
+
+  const cacheKey = query.toLowerCase().trim();
+  const cached = SEARCH_CACHE[cacheKey];
+  if (cached && Date.now() - cached.timestamp < SEARCH_CACHE_TTL) {
+    return cached.results;
+  }
+
+  const yahooUrl = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&lang=en-US&region=IN&quotesCount=15&newsCount=0&enableFuzzyQuery=false`;
+
+  const proxies = [
+    `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
+    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooUrl)}`,
+  ];
+
+  for (const proxyUrl of proxies) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+
+      const response = await fetch(proxyUrl, { signal: controller.signal });
+      clearTimeout(timeout);
+
+      if (!response.ok) continue;
+      const data = await response.json();
+
+      const quotes = data?.finance?.result?.[0]?.quotes || data?.quotes || [];
+
+      const results = quotes
+        .filter(q =>
+          q.isYahooFinance &&
+          (q.quoteType === 'EQUITY' || q.quoteType === 'ETF' || q.quoteType === 'MUTUALFUND') &&
+          (q.exchange === 'NSI' || q.exchange === 'BSE' || q.exchDisp === 'NSE' || q.exchDisp === 'BSE')
+        )
+        .map(q => ({
+          symbol: q.symbol,
+          displaySymbol: q.symbol.replace('.NS', '').replace('.BO', ''),
+          name: q.longname || q.shortname || q.symbol,
+          exchange: q.exchDisp || (q.exchange === 'NSI' ? 'NSE' : q.exchange),
+          type: q.typeDisp || q.quoteType,
+        }))
+        .slice(0, 10);
+
+      SEARCH_CACHE[cacheKey] = { results, timestamp: Date.now() };
+      return results;
+    } catch (e) {
+      continue;
+    }
+  }
+
+  return [];
 };

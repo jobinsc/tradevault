@@ -1,17 +1,21 @@
-// src/dataService.js
 import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  setDoc,
-  updateDoc,
-  deleteDoc,
-  addDoc,
-  query,
-  orderBy,
-  serverTimestamp,
-} from 'firebase/firestore';
+  createUserProfile,
+  getUserProfile,
+  getTrades,
+  addTrade as addTradeToCloud,
+  updateTrade as updateTradeInCloud,
+  deleteTrade as deleteTradeFromCloud,
+  bulkAddTrades,
+  updateUserCapital,
+  getRules as getRulesFromCloud,
+  saveRules as saveRulesToCloud,
+  migrateLocalDataToCloud,
+  getWatchlist,
+  addToWatchlist,
+  removeFromWatchlist,
+  updateWatchlistItem,
+} from './dataService';
+
 import { db, USER_STATUS } from './firebase';
 
 // ============ USER PROFILE ============
@@ -184,5 +188,56 @@ export const migrateLocalDataToCloud = async (userId) => {
   } catch (error) {
     console.error('Migration error:', error);
     return { migrated: false, error: error.message };
+  }
+};
+
+// ─────────────────────────────────────────────
+// WATCHLIST OPERATIONS
+// ─────────────────────────────────────────────
+
+export const getWatchlist = async (userId) => {
+  try {
+    const snapshot = await getDocs(collection(db, 'users', userId, 'watchlist'));
+    return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (e) {
+    console.error('getWatchlist error:', e);
+    return [];
+  }
+};
+
+export const addToWatchlist = async (userId, stockData) => {
+  try {
+    const docRef = await addDoc(collection(db, 'users', userId, 'watchlist'), {
+      symbol: stockData.symbol,
+      displaySymbol: stockData.displaySymbol,
+      name: stockData.name,
+      exchange: stockData.exchange,
+      type: stockData.type || 'Equity',
+      alertPrice: null,
+      alertDirection: 'above',
+      addedAt: new Date().toISOString(),
+    });
+    return docRef.id;
+  } catch (e) {
+    console.error('addToWatchlist error:', e);
+    throw e;
+  }
+};
+
+export const removeFromWatchlist = async (userId, itemId) => {
+  try {
+    await deleteDoc(doc(db, 'users', userId, 'watchlist', itemId));
+  } catch (e) {
+    console.error('removeFromWatchlist error:', e);
+    throw e;
+  }
+};
+
+export const updateWatchlistItem = async (userId, itemId, updates) => {
+  try {
+    await updateDoc(doc(db, 'users', userId, 'watchlist', itemId), updates);
+  } catch (e) {
+    console.error('updateWatchlistItem error:', e);
+    throw e;
   }
 };
