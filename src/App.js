@@ -3,6 +3,7 @@
   import StockDetailPage from './StockDetailPage';
   import CalculatorModal from './CalculatorModal';
   import IntradayZone from './IntradayZone';
+  import TradeTypeFilter, { filterTradesByType, getTypeLabel } from './TradeTypeFilter';
   import { v4 as uuidv4 } from 'uuid';
   import Papa from 'papaparse';
   import * as XLSX from 'xlsx';
@@ -626,6 +627,9 @@
     const [importPreview, setImportPreview] = useState([]);
     const [selectedStock, setSelectedStock] = useState(null);
     const [showCalculator, setShowCalculator] = useState(false);
+        const [analyticsFilter, setAnalyticsFilter] = useState('all');
+    const [portfolioFilter, setPortfolioFilter] = useState('all');
+    const [reportsFilter, setReportsFilter] = useState('all');
     const [previousPage, setPreviousPage] = useState('dashboard');
 
     
@@ -1162,6 +1166,7 @@
       analytics: { t: 'Analytics', s: 'Deep performance insights' },
       reports: { t: 'Detailed Report', s: 'Institutional-grade performance analysis' },
       synopsis: { t: 'Quick Synopsis', s: 'Executive summary at a glance' },
+            intradayZone: { t: '⚡ Intraday Zone', s: 'Real-time intraday trading dashboard' },
       intradayZone: { t: '⚡ Intraday Zone', s: 'Real-time intraday trading dashboard' },
       calendar: { t: 'Calendar', s: 'Daily P&L visualization' },
       rules: { t: 'Trading Rules', s: 'Pre-trade checklist' },
@@ -1807,155 +1812,335 @@
             )}
 
             {/* PORTFOLIO */}
-            {page === 'portfolio' && (
-              <>
-                <div className="stats-grid">
-                  <div className="stat-card purple">
-                    <div className="stat-card-label">Total Invested</div>
-                    <div className="stat-card-value">₹{fmtNum(Math.round(stats.investmentValue))}</div>
+            {page === 'portfolio' && (() => {
+              // Filter based on trade type selection
+              let portfolioTrades;
+              if (portfolioFilter === 'all') {
+                portfolioTrades = trades.filter(t => t.status === 'open');
+              } else {
+                portfolioTrades = filterTradesByType(trades, portfolioFilter).filter(t => t.status === 'open');
+              }
+              
+              const enrichedPortfolio = portfolioTrades.map(t => ({
+                ...t,
+                invested: (Number(t.entryPrice) || 0) * (Number(t.quantity) || 0),
+                duration: getHoldingDuration(t.entryDate, t.exitDate),
+              }));
+              
+              const totalInvested = enrichedPortfolio.reduce((s, t) => s + t.invested, 0);
+              const uniqueStocks = new Set(enrichedPortfolio.map(p => p.symbol)).size;
+              
+              // Calculate live current value if livePrices available
+              const liveCurrentValue = enrichedPortfolio.reduce((s, t) => {
+                const currentPrice = livePrices?.[t.symbol?.toUpperCase()]?.price;
+                if (currentPrice) {
+                  return s + (currentPrice * Number(t.quantity));
+                }
+                return s + t.invested;
+              }, 0);
+              
+              const unrealizedPnL = liveCurrentValue - totalInvested;
+              const unrealizedPct = totalInvested > 0 ? (unrealizedPnL / totalInvested) * 100 : 0;
+              
+              return (
+                <>
+                  <TradeTypeFilter 
+                    selected={portfolioFilter} 
+                    onChange={setPortfolioFilter}
+                    trades={trades.filter(t => t.status === 'open')}
+                  />
+
+                  <div className="stats-grid">
+                    <div className="stat-card purple">
+                      <div className="stat-card-label">Total Invested</div>
+                      <div className="stat-card-value">₹{fmtNum(Math.round(totalInvested))}</div>
+                    </div>
+                    <div className="stat-card blue">
+                      <div className="stat-card-label">Current Value (Live)</div>
+                      <div className="stat-card-value">₹{fmtNum(Math.round(liveCurrentValue))}</div>
+                    </div>
+                    <div className="stat-card green">
+                      <div className="stat-card-label">Unrealized P&L</div>
+                      <div className={`stat-card-value ${unrealizedPnL >= 0 ? 'green' : 'red'}`}>
+                        {fmtCurrencyWithSign(unrealizedPnL)}
+                      </div>
+                      <div className="stat-card-change" style={{ color: unrealizedPnL >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                        {unrealizedPnL >= 0 ? '↑' : '↓'} {Math.abs(unrealizedPct).toFixed(2)}%
+                      </div>
+                    </div>
+                    <div className="stat-card gold">
+                      <div className="stat-card-label">Holdings</div>
+                      <div className="stat-card-value">{enrichedPortfolio.length}</div>
+                    </div>
+                    <div className="stat-card cyan">
+                      <div className="stat-card-label">Unique Stocks</div>
+                      <div className="stat-card-value">{uniqueStocks}</div>
+                    </div>
                   </div>
-                  <div className="stat-card blue">
-                    <div className="stat-card-label">Holdings</div>
-                    <div className="stat-card-value">{portfolio.length}</div>
+                  
+                  <div className="trades-section">
+                    <div className="trades-header">
+                      <h3>💼 Portfolio Holdings ({getTypeLabel(portfolioFilter)})</h3>
+                    </div>
+                    {enrichedPortfolio.length > 0 ? (
+                      <div className="trades-table-wrapper">
+                        <table className="trades-table">
+                          <thead>
+                            <tr>
+                              <th>Symbol</th>
+                              <th>Type</th>
+                              <th>Entry Date</th>
+                              <th>Entry ₹</th>
+                              <th>Current ₹</th>
+                              <th>Qty</th>
+                              <th>Invested</th>
+                              <th>Current Value</th>
+                              <th>Live P&L</th>
+                              <th>Duration</th>
+                              <th>Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {enrichedPortfolio.map(t => {
+                              const currentPrice = livePrices?.[t.symbol?.toUpperCase()]?.price;
+                              const currentValue = currentPrice ? currentPrice * Number(t.quantity) : t.invested;
+                              const livePnL = currentPrice 
+                                ? (t.direction === 'long' 
+                                  ? (currentPrice - Number(t.entryPrice)) * Number(t.quantity)
+                                  : (Number(t.entryPrice) - currentPrice) * Number(t.quantity))
+                                : 0;
+                              const livePct = t.entryPrice ? (livePnL / (Number(t.entryPrice) * Number(t.quantity))) * 100 : 0;
+                              
+                              return (
+                                <tr key={t.id}>
+                                  <td>
+                                    <div 
+                                      className="trade-symbol"
+                                      onClick={() => openStockDetail(t.symbol)}
+                                      style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
+                                      onMouseEnter={e => e.currentTarget.style.color = '#3b82f6'}
+                                      onMouseLeave={e => e.currentTarget.style.color = ''}
+                                    >
+                                      <span className={`trade-symbol-dot ${t.direction}`}></span>
+                                      <span style={{ textDecoration: 'underline', textDecorationStyle: 'dotted' }}>
+                                        {t.symbol}
+                                      </span>
+                                      <span style={{ fontSize: 10, opacity: 0.5 }}>↗</span>
+                                    </div>
+                                  </td>
+                                  <td><span className={`badge badge-${t.tradeType}`}>{t.tradeType}</span></td>
+                                  <td>{t.entryDate ? format(parseISO(t.entryDate), 'dd MMM yy') : '-'}</td>
+                                  <td>₹{fmtNum(t.entryPrice)}</td>
+                                  <td>{currentPrice ? `₹${currentPrice.toFixed(2)}` : <span style={{ color: 'var(--text-muted)' }}>Loading...</span>}</td>
+                                  <td>{t.quantity}</td>
+                                  <td style={{ fontWeight: 700 }}>₹{fmtNum(Math.round(t.invested))}</td>
+                                  <td style={{ fontWeight: 700, color: 'var(--accent-blue)' }}>₹{fmtNum(Math.round(currentValue))}</td>
+                                  <td>
+                                    {currentPrice ? (
+                                      <div>
+                                        <div className={livePnL >= 0 ? 'pnl-positive' : 'pnl-negative'} style={{ fontWeight: 700 }}>
+                                          {fmtCurrencyWithSign(Math.round(livePnL))}
+                                        </div>
+                                        <div style={{ fontSize: 10, color: livePnL >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                                          {livePnL >= 0 ? '↑' : '↓'} {Math.abs(livePct).toFixed(2)}%
+                                        </div>
+                                      </div>
+                                    ) : '-'}
+                                  </td>
+                                  <td style={{ color: 'var(--accent-blue)', fontWeight: 600 }}>{t.duration}</td>
+                                  <td>
+                                    <div className="trade-actions">
+                                      <button className="trade-action-btn" onClick={() => setViewTrade(t)}><Icons.Eye /></button>
+                                      <button className="trade-action-btn" onClick={() => { setEditTrade(t); setShowTradeModal(true); }}><Icons.Edit /></button>
+                                      <button className="trade-action-btn delete" onClick={() => deleteTrade(t.id)}><Icons.Delete /></button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div className="empty-state">
+                        <div className="empty-state-icon">💼</div>
+                        <h3>No {getTypeLabel(portfolioFilter).toLowerCase()} holdings</h3>
+                        <p>Add open trades of this type to see them here</p>
+                      </div>
+                    )}
                   </div>
-                  <div className="stat-card gold">
-                    <div className="stat-card-label">Unique Stocks</div>
-                    <div className="stat-card-value">{new Set(portfolio.map(p => p.symbol)).size}</div>
-                  </div>
-                </div>
-                <div className="trades-section">
-                  <div className="trades-header">
-                    <h3>💎 Portfolio Holdings (Long-term)</h3>
-                  </div>
-                  {portfolio.length > 0 ? (
-                    <div className="trades-table-wrapper">
-                      <table className="trades-table">
-                        <thead>
-                          <tr>
-                            <th>Symbol</th><th>Type</th><th>Segment</th><th>Entry Date</th>
-                            <th>Entry Price</th><th>Qty</th><th>Invested</th><th>Duration</th><th>Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {portfolio.map(t => (
-                            <tr key={t.id}>
-                              <td>
-                                <div 
-                                  className="trade-symbol"
-                                  onClick={() => openStockDetail(t.symbol)}
-                                  style={{ cursor: 'pointer', transition: 'all 0.2s' }}
-                                  onMouseEnter={e => e.currentTarget.style.color = '#3b82f6'}
-                                  onMouseLeave={e => e.currentTarget.style.color = ''}
-                                  title={`Click to view ${t.symbol} details`}
-                                >
-                                  <span className="trade-symbol-dot long"></span>
-                                  <span style={{ textDecoration: 'underline', textDecorationStyle: 'dotted' }}>
-                                    {t.symbol}
+                </>
+              );
+            })()}
+                        {/* ANALYTICS */}
+            {page === 'analytics' && (() => {
+              const filteredTrades = filterTradesByType(trades, analyticsFilter);
+              const closed = filteredTrades.filter(t => t.status === 'closed');
+              const open = filteredTrades.filter(t => t.status === 'open');
+              const wins = closed.filter(t => Number(t.pnl) > 0);
+              const losses = closed.filter(t => Number(t.pnl) < 0);
+              const totalPnL = closed.reduce((s, t) => s + (Number(t.pnl) || 0), 0);
+              const totalCharges = closed.reduce((s, t) => s + (Number(t.charges) || 0), 0);
+              const netPnL = totalPnL - totalCharges;
+              const winRate = closed.length > 0 ? (wins.length / closed.length * 100) : 0;
+              const avgWin = wins.length > 0 ? wins.reduce((s, t) => s + Number(t.pnl), 0) / wins.length : 0;
+              const avgLoss = losses.length > 0 ? Math.abs(losses.reduce((s, t) => s + Number(t.pnl), 0) / losses.length) : 0;
+              const rr = avgLoss > 0 ? avgWin / avgLoss : 0;
+              const biggestWin = wins.length > 0 ? Math.max(...wins.map(t => Number(t.pnl))) : 0;
+              const biggestLoss = losses.length > 0 ? Math.min(...losses.map(t => Number(t.pnl))) : 0;
+              const grossProfit = wins.reduce((s, t) => s + Number(t.pnl), 0);
+              const grossLoss = Math.abs(losses.reduce((s, t) => s + Number(t.pnl), 0));
+              const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? 999 : 0;
+              
+              // Max drawdown for filtered trades
+              let peak = capital, maxDD = 0, running = capital;
+              closed.forEach(t => {
+                running += (Number(t.pnl) || 0) - (Number(t.charges) || 0);
+                if (running > peak) peak = running;
+                const dd = ((peak - running) / peak) * 100;
+                if (dd > maxDD) maxDD = dd;
+              });
+
+              // Weekly PnL
+              const ws = startOfWeek(new Date(), { weekStartsOn: 1 });
+              const we = endOfWeek(new Date(), { weekStartsOn: 1 });
+              const weekPnL = closed.filter(t => {
+                if (!t.exitDate) return false;
+                const d = parseISO(t.exitDate);
+                return d >= ws && d <= we;
+              }).reduce((s, t) => s + (Number(t.pnl) || 0), 0);
+
+              // Strategy data for filtered trades
+              const strategyMap = {};
+              closed.forEach(t => {
+                const s = t.strategy || 'Unknown';
+                if (!strategyMap[s]) strategyMap[s] = { name: s, pnl: 0, count: 0, wins: 0 };
+                strategyMap[s].pnl += Number(t.pnl) || 0;
+                strategyMap[s].count++;
+                if (Number(t.pnl) > 0) strategyMap[s].wins++;
+              });
+              const filteredStrategyData = Object.values(strategyMap).map(s => ({
+                ...s,
+                pnl: Math.round(s.pnl),
+                winRate: s.count > 0 ? Math.round(s.wins / s.count * 100) : 0,
+              })).sort((a, b) => b.pnl - a.pnl);
+
+              return (
+                <>
+                  <TradeTypeFilter 
+                    selected={analyticsFilter} 
+                    onChange={setAnalyticsFilter}
+                    trades={trades}
+                  />
+
+                  {filteredTrades.length === 0 ? (
+                    <div className="empty-state">
+                      <div className="empty-state-icon">📊</div>
+                      <h3>No {getTypeLabel(analyticsFilter)} trades yet</h3>
+                      <p>Add trades of this type to see analytics</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ 
+                        padding: 12, 
+                        background: 'rgba(59,130,246,0.1)', 
+                        borderRadius: 8, 
+                        marginBottom: 16,
+                        fontSize: 12,
+                        color: 'var(--text-muted)',
+                      }}>
+                        📊 Showing analytics for <strong style={{ color: 'var(--text-primary)' }}>{getTypeLabel(analyticsFilter)}</strong> • {filteredTrades.length} trades ({closed.length} closed, {open.length} open)
+                      </div>
+
+                      <div className="stats-grid">
+                        <div className="stat-card blue">
+                          <div className="stat-card-label">Profit Factor</div>
+                          <div className="stat-card-value">{profitFactor > 900 ? '∞' : profitFactor.toFixed(2)}</div>
+                        </div>
+                        <div className="stat-card green">
+                          <div className="stat-card-label">Net P&L</div>
+                          <div className={`stat-card-value ${netPnL >= 0 ? 'green' : 'red'}`}>{fmtCurrencyWithSign(netPnL)}</div>
+                        </div>
+                        <div className="stat-card gold">
+                          <div className="stat-card-label">Win Rate</div>
+                          <div className="stat-card-value">{winRate.toFixed(1)}%</div>
+                        </div>
+                        <div className="stat-card purple">
+                          <div className="stat-card-label">Risk:Reward</div>
+                          <div className="stat-card-value">{rr.toFixed(2)}</div>
+                        </div>
+                        <div className="stat-card green">
+                          <div className="stat-card-label">Biggest Win</div>
+                          <div className="stat-card-value green">{fmtCurrencyWithSign(biggestWin)}</div>
+                        </div>
+                        <div className="stat-card red">
+                          <div className="stat-card-label">Biggest Loss</div>
+                          <div className="stat-card-value red">{fmtCurrencyWithSign(biggestLoss)}</div>
+                        </div>
+                        <div className="stat-card gold">
+                          <div className="stat-card-label">Avg Win</div>
+                          <div className="stat-card-value green">{fmtCurrency(avgWin)}</div>
+                        </div>
+                        <div className="stat-card purple">
+                          <div className="stat-card-label">Avg Loss</div>
+                          <div className="stat-card-value red">-₹{fmtNum(Math.round(avgLoss))}</div>
+                        </div>
+                        <div className="stat-card cyan">
+                          <div className="stat-card-label">Max Drawdown</div>
+                          <div className="stat-card-value red">{maxDD.toFixed(1)}%</div>
+                        </div>
+                        <div className="stat-card green">
+                          <div className="stat-card-label">Week's P&L</div>
+                          <div className={`stat-card-value ${weekPnL >= 0 ? 'green' : 'red'}`}>
+                            {fmtCurrencyWithSign(weekPnL)}
+                          </div>
+                        </div>
+                        <div className="stat-card red">
+                          <div className="stat-card-label">Total Charges</div>
+                          <div className="stat-card-value">₹{fmtNum(Math.round(totalCharges))}</div>
+                        </div>
+                        <div className="stat-card blue">
+                          <div className="stat-card-label">Total Trades</div>
+                          <div className="stat-card-value">{filteredTrades.length}</div>
+                        </div>
+                      </div>
+
+                      <div className="chart-card">
+                        <div className="chart-card-title">🎯 Strategy Performance ({getTypeLabel(analyticsFilter)})</div>
+                        {filteredStrategyData.length > 0 ? (
+                          <>
+                            <ResponsiveContainer width="100%" height={250}>
+                              <BarChart data={filteredStrategyData} layout="vertical">
+                                <CartesianGrid strokeDasharray="3 3" stroke="#2a3150" />
+                                <XAxis type="number" tick={{ fill: '#64748b', fontSize: 10 }} />
+                                <YAxis type="category" dataKey="name" width={120} tick={{ fill: '#94a3b8', fontSize: 11 }} />
+                                <Tooltip contentStyle={{ background: '#1a1f35', border: '1px solid #2a3150', borderRadius: 8 }} />
+                                <Bar dataKey="pnl" radius={[0, 4, 4, 0]}>
+                                  {filteredStrategyData.map((e, i) => <Cell key={i} fill={e.pnl >= 0 ? '#10b981' : '#ef4444'} />)}
+                                </Bar>
+                              </BarChart>
+                            </ResponsiveContainer>
+                            <div style={{ marginTop: 16 }}>
+                              {filteredStrategyData.map((s, i) => (
+                                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--border-color)', fontSize: 12 }}>
+                                  <span style={{ fontWeight: 600 }}>{s.name}</span>
+                                  <span style={{ color: 'var(--text-muted)' }}>
+                                    {s.count} trades | WR: {s.winRate}% | 
+                                    <span className={s.pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}> {fmtCurrencyWithSign(s.pnl)}</span>
                                   </span>
                                 </div>
-                              </td>
-                              <td><span className={`badge badge-${t.tradeType}`}>{t.tradeType}</span></td>
-                              <td style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{t.segment}</td>
-                              <td>{format(parseISO(t.entryDate), 'dd MMM yy')}</td>
-                              <td>₹{fmtNum(t.entryPrice)}</td>
-                              <td>{t.quantity}</td>
-                              <td style={{ fontWeight: 700 }}>₹{fmtNum(Math.round(t.invested))}</td>
-                              <td style={{ color: 'var(--accent-blue)', fontWeight: 600 }}>{t.duration}</td>
-                              <td>
-                                <div className="trade-actions">
-                                  <button className="trade-action-btn" onClick={() => setViewTrade(t)}><Icons.Eye /></button>
-                                  <button className="trade-action-btn" onClick={() => { setEditTrade(t); setShowTradeModal(true); }}><Icons.Edit /></button>
-                                  <button className="trade-action-btn delete" onClick={() => deleteTrade(t.id)}><Icons.Delete /></button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : (
-                    <div className="empty-state">
-                      <div className="empty-state-icon">💎</div>
-                      <h3>No investments yet</h3>
-                      <p>Add delivery, positional or investment trades</p>
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-
-            {/* ANALYTICS */}
-            {page === 'analytics' && (
-              <>
-                <div className="stats-grid">
-                  <div className="stat-card blue">
-                    <div className="stat-card-label">Profit Factor</div>
-                    <div className="stat-card-value">{stats.profitFactor > 900 ? '∞' : stats.profitFactor.toFixed(2)}</div>
-                  </div>
-                  <div className="stat-card green">
-                    <div className="stat-card-label">Biggest Win</div>
-                    <div className="stat-card-value green">{fmtCurrencyWithSign(stats.biggestWin)}</div>
-                  </div>
-                  <div className="stat-card red">
-                    <div className="stat-card-label">Biggest Loss</div>
-                    <div className="stat-card-value red">{fmtCurrencyWithSign(stats.biggestLoss)}</div>
-                  </div>
-                  <div className="stat-card gold">
-                    <div className="stat-card-label">Avg Win</div>
-                    <div className="stat-card-value green">{fmtCurrency(stats.avgWin)}</div>
-                  </div>
-                  <div className="stat-card purple">
-                    <div className="stat-card-label">Avg Loss</div>
-                    <div className="stat-card-value red">-₹{fmtNum(Math.round(stats.avgLoss))}</div>
-                  </div>
-                  <div className="stat-card cyan">
-                    <div className="stat-card-label">Max Drawdown</div>
-                    <div className="stat-card-value red">{stats.maxDD.toFixed(1)}%</div>
-                  </div>
-                  <div className="stat-card green">
-                    <div className="stat-card-label">Week's P&L</div>
-                    <div className={`stat-card-value ${stats.weekPnL >= 0 ? 'green' : 'red'}`}>
-                      {fmtCurrencyWithSign(stats.weekPnL)}
-                    </div>
-                  </div>
-                  <div className="stat-card red">
-                    <div className="stat-card-label">Total Charges</div>
-                    <div className="stat-card-value">₹{fmtNum(Math.round(stats.totalCharges))}</div>
-                  </div>
-                </div>
-                <div className="chart-card">
-                  <div className="chart-card-title">🎯 Strategy Performance</div>
-                  {strategyData.length > 0 ? (
-                    <>
-                      <ResponsiveContainer width="100%" height={250}>
-                        <BarChart data={strategyData} layout="vertical">
-                          <CartesianGrid strokeDasharray="3 3" stroke="#2a3150" />
-                          <XAxis type="number" tick={{ fill: '#64748b', fontSize: 10 }} />
-                          <YAxis type="category" dataKey="name" width={120} tick={{ fill: '#94a3b8', fontSize: 11 }} />
-                          <Tooltip contentStyle={{ background: '#1a1f35', border: '1px solid #2a3150', borderRadius: 8 }} />
-                          <Bar dataKey="pnl" radius={[0, 4, 4, 0]}>
-                            {strategyData.map((e, i) => <Cell key={i} fill={e.pnl >= 0 ? '#10b981' : '#ef4444'} />)}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                      <div style={{ marginTop: 16 }}>
-                        {strategyData.map((s, i) => (
-                          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--border-color)', fontSize: 12 }}>
-                            <span style={{ fontWeight: 600 }}>{s.name}</span>
-                            <span style={{ color: 'var(--text-muted)' }}>
-                              {s.count} trades | WR: {s.winRate}% | 
-                              <span className={s.pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}> {fmtCurrencyWithSign(s.pnl)}</span>
-                            </span>
-                          </div>
-                        ))}
+                              ))}
+                            </div>
+                          </>
+                        ) : (
+                          <div className="empty-state"><p>No closed trades to analyze</p></div>
+                        )}
                       </div>
                     </>
-                  ) : (
-                    <div className="empty-state"><p>Add closed trades to see analytics</p></div>
                   )}
-                </div>
-              </>
-            )}
+                </>
+              );
+            })()}
 
             {/* CALENDAR */}
             {page === 'calendar' && <CalendarView month={calMonth} setMonth={setCalMonth} trades={trades} />}
@@ -1967,11 +2152,35 @@
             {page === 'import' && <ImportPage onImport={importBrokerCSV} />}
 
             {/* SETTINGS */}
-                      {/* DETAILED REPORT PAGE */}
-            {page === 'reports' && <DetailedReport trades={trades} capital={capital} stats={stats} />}
+                                  {/* DETAILED REPORT PAGE */}
+            {page === 'reports' && (
+              <>
+                <TradeTypeFilter 
+                  selected={reportsFilter} 
+                  onChange={setReportsFilter}
+                  trades={trades}
+                />
+                <DetailedReport 
+                  trades={filterTradesByType(trades, reportsFilter)} 
+                  capital={capital} 
+                  stats={stats}
+                  filterLabel={getTypeLabel(reportsFilter)}
+                />
+              </>
+            )}
 
             {/* SYNOPSIS PAGE */}
             {page === 'synopsis' && <SynopsisReport trades={trades} capital={capital} stats={stats} />}
+            
+            {/* INTRADAY ZONE */}
+            {page === 'intradayZone' && (
+              <IntradayZone 
+                trades={trades} 
+                capital={capital} 
+                livePrices={livePrices}
+                onSymbolClick={openStockDetail}
+              />
+            )}
             
             {/* INTRADAY ZONE */}
             {page === 'intradayZone' && (
@@ -3160,7 +3369,7 @@
     );
   }
   // ============ DETAILED REPORT ============
-  function DetailedReport({ trades, capital, stats }) {
+  function DetailedReport({ trades, capital, stats, filterLabel = 'All Trades' }) {
     const advanced = useMemo(() => calculateAdvancedMetrics(trades, capital), [trades, capital]);
     const monthlyPerf = useMemo(() => getMonthlyPerformance(trades), [trades]);
     const dayPerf = useMemo(() => getDayOfWeekPerformance(trades), [trades]);
@@ -3186,7 +3395,7 @@
       <div>
         {/* HEADER */}
         <div style={{ background: 'linear-gradient(135deg, #1e293b, #0f172a)', borderRadius: 16, padding: 24, marginBottom: 20, border: '1px solid var(--border-color)' }}>
-          <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 6 }}>📊 Institutional Performance Report</h2>
+          <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 6 }}>📊 Detailed Report — {filterLabel}</h2>
           <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
             Generated on {format(new Date(), 'dd MMMM yyyy, HH:mm')} | {closed.length} closed trades analyzed
           </p>
