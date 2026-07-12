@@ -5,6 +5,7 @@
   import IntradayZone from './IntradayZone';
   import TradeTypeFilter, { filterTradesByType, getTypeLabel } from './TradeTypeFilter';
   import ShortcutsHelpModal from './ShortcutsHelpModal';
+  import AIAnalysisModal from './AIAnalysisModal';
   import UserSettingsModal from './UserSettingsModal';
   import { v4 as uuidv4 } from 'uuid';
   import Papa from 'papaparse';
@@ -823,9 +824,11 @@
     const [importPreview, setImportPreview] = useState([]);
     const [selectedStock, setSelectedStock] = useState(null);
     const [showCalculator, setShowCalculator] = useState(false);
+    const [showAIAnalysis, setShowAIAnalysis] = useState(false);
         const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
         const [analyticsFilter, setAnalyticsFilter] = useState('all');
     const [portfolioFilter, setPortfolioFilter] = useState('all');
+    const [portfolioSort, setPortfolioSort] = useState({ key: null, direction: 'asc' });
     const [reportsFilter, setReportsFilter] = useState('all');
     const [previousPage, setPreviousPage] = useState('dashboard');
 
@@ -1364,6 +1367,7 @@
       reports: { t: 'Detailed Report', s: 'Institutional-grade performance analysis' },
       synopsis: { t: 'Quick Synopsis', s: 'Executive summary at a glance' },
             intradayZone: { t: '⚡ Intraday Zone', s: 'Real-time intraday trading dashboard' },
+            aiAnalysis: { t: '🤖 AI Chart Analysis', s: 'AI-powered chart pattern recognition & trade suggestions' },
       intradayZone: { t: '⚡ Intraday Zone', s: 'Real-time intraday trading dashboard' },
       calendar: { t: 'Calendar', s: 'Daily P&L visualization' },
       rules: { t: 'Trading Rules', s: 'Pre-trade checklist' },
@@ -1460,6 +1464,7 @@
               { id: 'portfolio', icon: <Icons.Portfolio />, label: 'Portfolio' },
               { id: 'analytics', icon: <Icons.Analytics />, label: 'Analytics' },
               { id: 'intradayZone', icon: <Icons.Trade />, label: '⚡ Intraday Zone' },
+              { id: 'aiAnalysis', icon: <Icons.Analytics />, label: '🤖 AI Analysis', badge: 'NEW' },
   { id: 'reports', icon: <Icons.Analytics />, label: 'Detailed Report' },
   { id: 'synopsis', icon: <Icons.Analytics />, label: 'Quick Synopsis' },
               { id: 'calendar', icon: <Icons.Calendar />, label: 'Calendar' },
@@ -1581,6 +1586,14 @@
               >
                 🧮
               </button>
+              <button
+  className="top-bar-btn"
+  onClick={() => setPage('dashboard')}
+  title="Home (Dashboard)"
+  style={{ fontSize: '18px' }}
+>
+  🏠
+</button>
               
               <button
   className="top-bar-btn"
@@ -1619,6 +1632,122 @@
             {msg && <div className="success-message">{msg}</div>}
 
             {/* DASHBOARD */}
+            {/* AI ANALYSIS PAGE */}
+{page === 'aiAnalysis' && (
+  <div style={{ padding: '20px' }}>
+    {/* Hero Section */}
+    <div style={{
+      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      borderRadius: 20, padding: 40, marginBottom: 24,
+      textAlign: 'center', position: 'relative', overflow: 'hidden'
+    }}>
+      <div style={{
+        position: 'absolute', top: 10, right: 20,
+        padding: '4px 12px', background: 'rgba(255,255,255,0.2)',
+        borderRadius: 12, fontSize: 11, color: '#fff', fontWeight: 600
+      }}>
+        ✨ NEW FEATURE
+      </div>
+      <div style={{ fontSize: 64, marginBottom: 16 }}>🤖</div>
+      <h1 style={{ color: '#fff', margin: '0 0 12px', fontSize: 32 }}>
+        AI-Powered Chart Analysis
+      </h1>
+      <p style={{ color: 'rgba(255,255,255,0.9)', margin: '0 0 24px', fontSize: 16, maxWidth: 600, marginLeft: 'auto', marginRight: 'auto' }}>
+        Upload any trading chart screenshot and get instant AI analysis with pattern recognition, entry/exit points, and personalized trade suggestions.
+      </p>
+      <button 
+        onClick={() => setShowAIAnalysis(true)}
+        style={{
+          padding: '14px 32px', background: '#fff', color: '#667eea',
+          border: 'none', borderRadius: 10, fontSize: 16, fontWeight: 700,
+          cursor: 'pointer', boxShadow: '0 4px 20px rgba(0,0,0,0.2)'
+        }}
+      >
+        🚀 Start Analysis
+      </button>
+    </div>
+
+    {/* Features Grid */}
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16, marginBottom: 24 }}>
+      {[
+        { icon: '📊', title: 'Pattern Recognition', desc: 'Detects Head & Shoulders, Triangles, Flags, and more' },
+        { icon: '🎯', title: 'Trade Setup', desc: 'Entry, targets, stop loss with risk/reward calculations' },
+        { icon: '📏', title: 'Support & Resistance', desc: 'Identifies key price levels automatically' },
+        { icon: '💡', title: 'Smart Insights', desc: 'Actionable insights based on chart analysis' },
+        { icon: '⚠️', title: 'Risk Warnings', desc: 'Alerts you to potential risks and conflicting signals' },
+        { icon: '⭐', title: 'Confidence Score', desc: 'Rates each analysis on a 10-point scale' },
+      ].map((feature, i) => (
+        <div key={i} style={{
+          background: 'var(--bg-card, #1a1f35)', padding: 20, borderRadius: 12,
+          border: '1px solid var(--border-color, #2a3150)'
+        }}>
+          <div style={{ fontSize: 32, marginBottom: 8 }}>{feature.icon}</div>
+          <div style={{ color: 'var(--text-primary, #f1f5f9)', fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
+            {feature.title}
+          </div>
+          <div style={{ color: 'var(--text-secondary, #94a3b8)', fontSize: 13, lineHeight: 1.5 }}>
+            {feature.desc}
+          </div>
+        </div>
+      ))}
+    </div>
+
+    {/* How It Works */}
+    <div style={{
+      background: 'var(--bg-card, #1a1f35)', padding: 24, borderRadius: 16,
+      border: '1px solid var(--border-color, #2a3150)', marginBottom: 24
+    }}>
+      <h3 style={{ color: 'var(--text-primary, #f1f5f9)', margin: '0 0 20px', fontSize: 20 }}>
+        🎯 How It Works
+      </h3>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 20 }}>
+        {[
+          { step: '1', title: 'Upload Chart', desc: 'Screenshot from TradingView, Zerodha, or any platform' },
+          { step: '2', title: 'AI Analyzes', desc: 'Google Gemini Vision AI processes your chart' },
+          { step: '3', title: 'Get Results', desc: 'Structured analysis in 5-15 seconds' },
+          { step: '4', title: 'Take Action', desc: 'Use insights to make informed trade decisions' },
+        ].map((s, i) => (
+          <div key={i} style={{ textAlign: 'center' }}>
+            <div style={{
+              width: 40, height: 40, borderRadius: '50%',
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 18, fontWeight: 700, margin: '0 auto 12px'
+            }}>
+              {s.step}
+            </div>
+            <div style={{ color: 'var(--text-primary, #f1f5f9)', fontSize: 14, fontWeight: 600, marginBottom: 6 }}>
+              {s.title}
+            </div>
+            <div style={{ color: 'var(--text-secondary, #94a3b8)', fontSize: 12 }}>
+              {s.desc}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    {/* Tips */}
+    <div style={{
+      background: 'rgba(59, 130, 246, 0.05)', padding: 20, borderRadius: 12,
+      border: '1px solid rgba(59, 130, 246, 0.3)'
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+        <span style={{ fontSize: 20 }}>💡</span>
+        <span style={{ color: 'var(--text-primary, #f1f5f9)', fontSize: 15, fontWeight: 600 }}>
+          Pro Tips for Best Results
+        </span>
+      </div>
+      <ul style={{ color: 'var(--text-secondary, #94a3b8)', fontSize: 13, margin: 0, paddingLeft: 20, lineHeight: 1.8 }}>
+        <li>Use clear, high-resolution chart screenshots</li>
+        <li>Include price levels, timeframe, and volume in the screenshot</li>
+        <li>Add stock symbol and timeframe for more accurate analysis</li>
+        <li>Charts with technical indicators (RSI, MACD) get better analysis</li>
+        <li>Always verify AI suggestions with your own analysis</li>
+      </ul>
+    </div>
+  </div>
+)}
             {page === 'dashboard' && (
               <>
                 <div className="stats-grid">
@@ -1711,11 +1840,47 @@
                     {typeData.length > 0 ? (
                       <ResponsiveContainer width="100%" height={280}>
                         <PieChart>
-                          <Pie data={typeData} innerRadius={55} outerRadius={90} paddingAngle={4} dataKey="value">
-                            {typeData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
-                          </Pie>
+<Pie 
+  data={typeData} 
+  innerRadius={55} 
+  outerRadius={90} 
+  paddingAngle={4} 
+  dataKey="value"
+  onClick={(data) => {
+    const typeName = data.name.toLowerCase();
+    if (typeName.includes('swing')) setFilter('swing');
+    else if (typeName.includes('intraday')) setFilter('intraday');
+    else if (typeName.includes('investment')) setFilter('investment');
+    else if (typeName.includes('delivery')) setFilter('delivery');
+    else if (typeName.includes('positional')) setFilter('positional');
+    else if (typeName.includes('scalp')) setFilter('scalp');
+    setPage('trades');
+  }}
+  style={{ cursor: 'pointer' }}
+>
+  {typeData.map((_, i) => (
+    <Cell 
+      key={i} 
+      fill={CHART_COLORS[i % CHART_COLORS.length]} 
+      style={{ cursor: 'pointer' }}
+    />
+  ))}
+</Pie>
                           <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 8, color: 'var(--text-primary)' }} />
-                          <Legend wrapperStyle={{ fontSize: 11 }} />
+                          <Legend 
+  wrapperStyle={{ fontSize: 11, cursor: 'pointer' }}
+  onClick={(data) => {
+    setPage('trades');
+    const typeName = data.value.toLowerCase();
+    if (typeName.includes('swing')) setFilterType('swing');
+    else if (typeName.includes('intraday')) setFilterType('intraday');
+    else if (typeName.includes('investment') || typeName.includes('sip')) setFilterType('investment');
+    else if (typeName.includes('delivery') || typeName.includes('long')) setFilterType('delivery');
+    else if (typeName.includes('positional')) setFilterType('positional');
+    else if (typeName.includes('scalp')) setFilterType('scalp');
+    else if (typeName.includes('btst')) setFilterType('btst');
+  }}
+/>
                         </PieChart>
                       </ResponsiveContainer>
                     ) : (
@@ -1868,6 +2033,7 @@
 
                 <div className="trades-section">
                   <div className="trades-header">
+ 
                     <h3>📋 Recent Trades</h3>
                     <button className="btn btn-primary btn-sm" onClick={() => { setEditTrade(null); setShowTradeModal(true); }}>
                       <Icons.Plus /> Add Trade
@@ -2051,11 +2217,67 @@
               
               const enrichedPortfolio = portfolioTrades.map(t => ({
                 ...t,
+                
                 invested: (Number(t.entryPrice) || 0) * (Number(t.quantity) || 0),
                 duration: getHoldingDuration(t.entryDate, t.exitDate),
               }));
               
               const totalInvested = enrichedPortfolio.reduce((s, t) => s + t.invested, 0);
+                const handlePortfolioSort = (key) => {
+    let direction = 'asc';
+    if (portfolioSort.key === key && portfolioSort.direction === 'asc') direction = 'desc';
+    else if (portfolioSort.key === key && portfolioSort.direction === 'desc') {
+      setPortfolioSort({ key: null, direction: 'asc' });
+      return;
+    }
+    setPortfolioSort({ key, direction });
+  };
+
+  const sortedPortfolio = (() => {
+    if (!portfolioSort.key) return enrichedPortfolio;
+    return [...enrichedPortfolio].sort((a, b) => {
+      let aVal = a[portfolioSort.key];
+      let bVal = b[portfolioSort.key];
+      
+      if (portfolioSort.key === 'currentPrice') {
+        aVal = livePrices?.[a.symbol?.toUpperCase()]?.price || 0;
+        bVal = livePrices?.[b.symbol?.toUpperCase()]?.price || 0;
+      }
+      if (portfolioSort.key === 'currentValue') {
+        const priceA = livePrices?.[a.symbol?.toUpperCase()]?.price || a.entryPrice;
+        const priceB = livePrices?.[b.symbol?.toUpperCase()]?.price || b.entryPrice;
+        aVal = priceA * a.quantity;
+        bVal = priceB * b.quantity;
+      }
+      if (portfolioSort.key === 'livePnl') {
+        const priceA = livePrices?.[a.symbol?.toUpperCase()]?.price || a.entryPrice;
+        const priceB = livePrices?.[b.symbol?.toUpperCase()]?.price || b.entryPrice;
+        aVal = (priceA - a.entryPrice) * a.quantity;
+        bVal = (priceB - b.entryPrice) * b.quantity;
+      }
+      if (portfolioSort.key === 'entryDate') {
+        aVal = new Date(a.entryDate).getTime();
+        bVal = new Date(b.entryDate).getTime();
+      }
+      if (['entryPrice', 'quantity', 'invested'].includes(portfolioSort.key)) {
+        aVal = Number(aVal) || 0;
+        bVal = Number(bVal) || 0;
+      }
+      if (typeof aVal === 'string') aVal = aVal.toLowerCase();
+      if (typeof bVal === 'string') bVal = bVal.toLowerCase();
+      if (aVal == null) return 1;
+      if (bVal == null) return -1;
+      
+      if (aVal < bVal) return portfolioSort.direction === 'asc' ? -1 : 1;
+      if (aVal > bVal) return portfolioSort.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+  })();
+
+  const getPortfolioSortIcon = (key) => {
+    if (portfolioSort.key !== key) return '⇅';
+    return portfolioSort.direction === 'asc' ? '↑' : '↓';
+  };
               const uniqueStocks = new Set(enrichedPortfolio.map(p => p.symbol)).size;
               
               // Calculate live current value if livePrices available
@@ -2115,21 +2337,39 @@
                         <table className="trades-table">
                           <thead>
                             <tr>
-                              <th>Symbol</th>
-                              <th>Type</th>
-                              <th>Entry Date</th>
-                              <th>Entry ₹</th>
-                              <th>Current ₹</th>
-                              <th>Qty</th>
-                              <th>Invested</th>
-                              <th>Current Value</th>
-                              <th>Live P&L</th>
-                              <th>Duration</th>
-                              <th>Actions</th>
-                            </tr>
+  <th onClick={() => handlePortfolioSort('symbol')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+    Symbol <span style={{ opacity: 0.5, fontSize: 10 }}>{getPortfolioSortIcon('symbol')}</span>
+  </th>
+  <th onClick={() => handlePortfolioSort('tradeType')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+    Type <span style={{ opacity: 0.5, fontSize: 10 }}>{getPortfolioSortIcon('tradeType')}</span>
+  </th>
+  <th onClick={() => handlePortfolioSort('entryDate')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+    Entry Date <span style={{ opacity: 0.5, fontSize: 10 }}>{getPortfolioSortIcon('entryDate')}</span>
+  </th>
+  <th onClick={() => handlePortfolioSort('entryPrice')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+    Entry ₹ <span style={{ opacity: 0.5, fontSize: 10 }}>{getPortfolioSortIcon('entryPrice')}</span>
+  </th>
+  <th onClick={() => handlePortfolioSort('currentPrice')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+    Current ₹ <span style={{ opacity: 0.5, fontSize: 10 }}>{getPortfolioSortIcon('currentPrice')}</span>
+  </th>
+  <th onClick={() => handlePortfolioSort('quantity')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+    Qty <span style={{ opacity: 0.5, fontSize: 10 }}>{getPortfolioSortIcon('quantity')}</span>
+  </th>
+  <th onClick={() => handlePortfolioSort('invested')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+    Invested <span style={{ opacity: 0.5, fontSize: 10 }}>{getPortfolioSortIcon('invested')}</span>
+  </th>
+  <th onClick={() => handlePortfolioSort('currentValue')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+    Current Value <span style={{ opacity: 0.5, fontSize: 10 }}>{getPortfolioSortIcon('currentValue')}</span>
+  </th>
+  <th onClick={() => handlePortfolioSort('livePnl')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+    Live P&L <span style={{ opacity: 0.5, fontSize: 10 }}>{getPortfolioSortIcon('livePnl')}</span>
+  </th>
+  <th>Duration</th>
+  <th>Actions</th>
+</tr>
                           </thead>
                           <tbody>
-                            {enrichedPortfolio.map(t => {
+                            {sortedPortfolio.map(t => {
                               const currentPrice = livePrices?.[t.symbol?.toUpperCase()]?.price;
                               const currentValue = currentPrice ? currentPrice * Number(t.quantity) : t.invested;
                               const livePnL = currentPrice 
@@ -2510,6 +2750,15 @@
             </div>
           </div>
         )}        {showCalculator && <CalculatorModal onClose={() => setShowCalculator(false)} />}
+        {showAIAnalysis && (
+  <AIAnalysisModal 
+    onClose={() => setShowAIAnalysis(false)}
+    onSave={(analysis, imagePreview) => {
+      showMsg('💾 Analysis feature coming soon!');
+      setShowAIAnalysis(false);
+    }}
+  />
+)}
                 {showShortcutsHelp && <ShortcutsHelpModal onClose={() => setShowShortcutsHelp(false)} />}
                           {showUserSettings && (
           <UserSettingsModal 
@@ -2548,8 +2797,62 @@
   }
 
   // ============ TRADE TABLE WITH CHECKBOXES ============
-  function TradeTable({ trades, onEdit, onDelete, onView, onDuplicate, selectable, selectedTrades = [], toggleSelection, selectAll, onSymbolClick }) {
-    const allSelected = selectable && trades.length > 0 && trades.every(t => selectedTrades.includes(t.id));
+ function TradeTable({ trades, onEdit, onDelete, onView, onDuplicate, selectable, selectedTrades = [], toggleSelection, selectAll, onSymbolClick }) {
+  const allSelected = selectable && trades.length > 0 && trades.every(t => selectedTrades.includes(t.id));
+  
+  // Sort state
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
+  
+  const handleSort = (key) => {
+    let direction = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    } else if (sortConfig.key === key && sortConfig.direction === 'desc') {
+      setSortConfig({ key: null, direction: 'asc' });
+      return;
+    }
+    setSortConfig({ key, direction });
+  };
+  
+  const sortedTrades = React.useMemo(() => {
+    if (!sortConfig.key) return trades;
+    return [...trades].sort((a, b) => {
+      let aVal = a[sortConfig.key];
+      let bVal = b[sortConfig.key];
+      
+      if (sortConfig.key === 'pnl') {
+        aVal = calculatePnL(a);
+        bVal = calculatePnL(b);
+      }
+      if (sortConfig.key === 'status') {
+        aVal = a.exitPrice ? 'closed' : 'open';
+        bVal = b.exitPrice ? 'closed' : 'open';
+      }
+      if (sortConfig.key === 'entryDate') {
+        aVal = new Date(a.entryDate).getTime();
+        bVal = new Date(b.entryDate).getTime();
+      }
+      if (['entryPrice', 'exitPrice', 'quantity'].includes(sortConfig.key)) {
+        aVal = Number(aVal) || 0;
+        bVal = Number(bVal) || 0;
+      }
+      if (typeof aVal === 'string') aVal = aVal.toLowerCase();
+      if (typeof bVal === 'string') bVal = bVal.toLowerCase();
+      if (aVal == null) return 1;
+      if (bVal == null) return -1;
+      
+      if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [trades, sortConfig]);
+  
+  const getSortIcon = (key) => {
+    if (sortConfig.key !== key) return '⇅';
+    return sortConfig.direction === 'asc' ? '↑' : '↓';
+  };
+  
+  const sortStyle = { cursor: 'pointer', userSelect: 'none' };
     
     return (
       <div className="trades-table-wrapper">
@@ -2562,22 +2865,35 @@
                     onClick={selectAll} style={{ margin: '0 auto', cursor: 'pointer' }} />
                 </th>
               )}
-              <th>Symbol</th>
-              <th>Sector</th>
-              <th>Direction</th>
-              <th>Type</th>
-              <th>Entry Date</th>
-              <th>Entry ₹</th>
-              <th>Exit ₹</th>
-              <th>Qty</th>
-              <th>Duration</th>
-              <th>P&L</th>
-              <th>Status</th>
-              <th>Actions</th>
+              <th onClick={() => handleSort('symbol')} style={sortStyle}>
+  Symbol <span style={{ opacity: 0.5, fontSize: 10 }}>{getSortIcon('symbol')}</span>
+</th>
+<th onClick={() => handleSort('sector')} style={sortStyle}>
+  Sector <span style={{ opacity: 0.5, fontSize: 10 }}>{getSortIcon('sector')}</span>
+</th>
+<th onClick={() => handleSort('direction')} style={sortStyle}>
+  Direction <span style={{ opacity: 0.5, fontSize: 10 }}>{getSortIcon('direction')}</span>
+</th>
+<th onClick={() => handleSort('tradeType')} style={sortStyle}>
+  Type <span style={{ opacity: 0.5, fontSize: 10 }}>{getSortIcon('tradeType')}</span>
+</th>
+<th onClick={() => handleSort('entryDate')} style={sortStyle}>
+  Entry Date <span style={{ opacity: 0.5, fontSize: 10 }}>{getSortIcon('entryDate')}</span>
+</th>
+<th onClick={() => handleSort('entryPrice')} style={sortStyle}>
+  Entry ₹ <span style={{ opacity: 0.5, fontSize: 10 }}>{getSortIcon('entryPrice')}</span>
+</th>
+<th onClick={() => handleSort('exitPrice')} style={sortStyle}>
+  Exit ₹ <span style={{ opacity: 0.5, fontSize: 10 }}>{getSortIcon('exitPrice')}</span>
+</th>
+<th onClick={() => handleSort('quantity')} style={sortStyle}>
+  Qty <span style={{ opacity: 0.5, fontSize: 10 }}>{getSortIcon('quantity')}</span>
+</th>
+<th>Duration</th>
             </tr>
           </thead>
           <tbody>
-            {trades.map(t => (
+            {sortedTrades.map(t => (
               <tr key={t.id} style={{ background: selectedTrades.includes(t.id) ? 'rgba(59,130,246,0.05)' : '' }}>
                 {selectable && (
                   <td>
