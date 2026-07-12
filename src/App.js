@@ -4,6 +4,7 @@
   import CalculatorModal from './CalculatorModal';
   import IntradayZone from './IntradayZone';
   import TradeTypeFilter, { filterTradesByType, getTypeLabel } from './TradeTypeFilter';
+  import ShortcutsHelpModal from './ShortcutsHelpModal';
   import { v4 as uuidv4 } from 'uuid';
   import Papa from 'papaparse';
   import * as XLSX from 'xlsx';
@@ -605,6 +606,83 @@
       }
     }, [rules, user]);
 
+    // ⌨️ KEYBOARD SHORTCUTS
+    useEffect(() => {
+      if (!user) return;
+      
+      const handleKeyDown = (e) => {
+        const activeTag = document.activeElement?.tagName;
+        const isTyping = ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeTag);
+        
+        // Escape closes any modal
+        if (e.key === 'Escape') {
+          setShowShortcutsHelp(false);
+          setShowCalculator(false);
+          return;
+        }
+        
+        if (isTyping && !(e.ctrlKey && e.key.toLowerCase() === 'k')) return;
+        
+        if (e.ctrlKey || e.metaKey) {
+          switch (e.key.toLowerCase()) {
+            case '/':
+              e.preventDefault();
+              setShowShortcutsHelp(true);
+              break;
+            case 'n':
+              e.preventDefault();
+              setEditTrade(null);
+              setShowTradeModal(true);
+              break;
+            case 'k':
+              e.preventDefault();
+              const searchInput = document.querySelector('.search-input-wrapper input');
+              if (searchInput) {
+                searchInput.focus();
+                searchInput.select();
+              }
+              break;
+            case 'm':
+              e.preventDefault();
+              setShowCalculator(true);
+              break;
+            case 'd':
+              e.preventDefault();
+              setPage('dashboard');
+              break;
+            case 't':
+              e.preventDefault();
+              setPage('trades');
+              break;
+            case 'p':
+              e.preventDefault();
+              setPage('portfolio');
+              break;
+            case 'a':
+              e.preventDefault();
+              setPage('analytics');
+              break;
+            case 'i':
+              e.preventDefault();
+              setPage('intradayZone');
+              break;
+            case 'r':
+              e.preventDefault();
+              setPage('reports');
+              break;
+            case 'y':
+              e.preventDefault();
+              setPage('calendar');
+              break;
+            default:
+              break;
+          }
+        }
+      };
+      
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [user]);
     const handleLogout = async () => {
       if (window.confirm('Are you sure you want to logout?')) {
         await signOut(auth);
@@ -627,6 +705,7 @@
     const [importPreview, setImportPreview] = useState([]);
     const [selectedStock, setSelectedStock] = useState(null);
     const [showCalculator, setShowCalculator] = useState(false);
+        const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
         const [analyticsFilter, setAnalyticsFilter] = useState('all');
     const [portfolioFilter, setPortfolioFilter] = useState('all');
     const [reportsFilter, setReportsFilter] = useState('all');
@@ -1383,6 +1462,14 @@
                 style={{ padding: '10px 14px' }}
               >
                 🧮
+              </button>
+                            <button 
+                className="btn btn-ghost" 
+                onClick={() => setShowShortcutsHelp(true)}
+                title="Keyboard Shortcuts"
+                style={{ padding: '10px 14px' }}
+              >
+                ⌨️
               </button>
             </div>
           </div>
@@ -2282,7 +2369,7 @@
             </div>
           </div>
         )}        {showCalculator && <CalculatorModal onClose={() => setShowCalculator(false)} />}
-        
+                {showShortcutsHelp && <ShortcutsHelpModal onClose={() => setShowShortcutsHelp(false)} />}
         {showCapitalModal && (
           <div className="modal-overlay" onClick={() => setShowCapitalModal(false)}>
             <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
