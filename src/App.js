@@ -2,6 +2,7 @@
   import StockSearchModal from './StockSearchModal';
   import StockDetailPage from './StockDetailPage';
   import CalculatorModal from './CalculatorModal';
+  import IntradayZone from './IntradayZone';
   import { v4 as uuidv4 } from 'uuid';
   import Papa from 'papaparse';
   import * as XLSX from 'xlsx';
@@ -1161,6 +1162,7 @@
       analytics: { t: 'Analytics', s: 'Deep performance insights' },
       reports: { t: 'Detailed Report', s: 'Institutional-grade performance analysis' },
       synopsis: { t: 'Quick Synopsis', s: 'Executive summary at a glance' },
+      intradayZone: { t: '⚡ Intraday Zone', s: 'Real-time intraday trading dashboard' },
       calendar: { t: 'Calendar', s: 'Daily P&L visualization' },
       rules: { t: 'Trading Rules', s: 'Pre-trade checklist' },
       import: { t: 'Import Trades', s: 'Upload from broker' },
@@ -1255,6 +1257,7 @@
               { id: 'trades', icon: <Icons.Trade />, label: 'Trade Log' },
               { id: 'portfolio', icon: <Icons.Portfolio />, label: 'Portfolio' },
               { id: 'analytics', icon: <Icons.Analytics />, label: 'Analytics' },
+              { id: 'intradayZone', icon: <Icons.Trade />, label: '⚡ Intraday Zone' },
   { id: 'reports', icon: <Icons.Analytics />, label: 'Detailed Report' },
   { id: 'synopsis', icon: <Icons.Analytics />, label: 'Quick Synopsis' },
               { id: 'calendar', icon: <Icons.Calendar />, label: 'Calendar' },
@@ -1969,6 +1972,16 @@
 
             {/* SYNOPSIS PAGE */}
             {page === 'synopsis' && <SynopsisReport trades={trades} capital={capital} stats={stats} />}
+            
+            {/* INTRADAY ZONE */}
+            {page === 'intradayZone' && (
+              <IntradayZone 
+                trades={trades} 
+                capital={capital} 
+                livePrices={livePrices}
+                onSymbolClick={openStockDetail}
+              />
+            )}
             
             {/* STOCK DETAIL PAGE */}
             {page === 'stockDetail' && selectedStock && (
