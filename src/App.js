@@ -1,6 +1,7 @@
   import React, { useState, useEffect, useMemo } from 'react';
   import StockSearchModal from './StockSearchModal';
   import StockDetailPage from './StockDetailPage';
+  import CalculatorModal from './CalculatorModal';
   import { v4 as uuidv4 } from 'uuid';
   import Papa from 'papaparse';
   import * as XLSX from 'xlsx';
@@ -622,7 +623,8 @@
     const [selectedTrades, setSelectedTrades] = useState([]);
     const [showImportPreview, setShowImportPreview] = useState(false);
     const [importPreview, setImportPreview] = useState([]);
-        const [selectedStock, setSelectedStock] = useState(null);
+    const [selectedStock, setSelectedStock] = useState(null);
+    const [showCalculator, setShowCalculator] = useState(false);
     const [previousPage, setPreviousPage] = useState('dashboard');
 
     
@@ -1366,6 +1368,14 @@
               <button className="btn btn-primary" onClick={() => { setEditTrade(null); setShowTradeModal(true); }}>
                 <Icons.Plus /> New Trade
               </button>
+                            <button 
+                className="btn btn-ghost" 
+                onClick={() => setShowCalculator(true)}
+                title="Calculator"
+                style={{ padding: '10px 14px' }}
+              >
+                🧮
+              </button>
             </div>
           </div>
 
@@ -2049,7 +2059,9 @@
               </div>
             </div>
           </div>
-        )}{showCapitalModal && (
+        )}        {showCalculator && <CalculatorModal onClose={() => setShowCalculator(false)} />}
+        
+        {showCapitalModal && (
           <div className="modal-overlay" onClick={() => setShowCapitalModal(false)}>
             <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
               <div className="modal-header">
@@ -2115,7 +2127,44 @@
                       onClick={() => toggleSelection(t.id)} style={{ margin: '0 auto', cursor: 'pointer' }} />
                   </td>
                 )}
-                <td><div className="trade-symbol"><span className={`trade-symbol-dot ${t.direction}`}></span>{t.symbol}</div></td>
+                <td>
+                  <div 
+                    className="trade-symbol" 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      console.log('Symbol clicked:', t.symbol);
+                      if (onSymbolClick) {
+                        onSymbolClick(t.symbol);
+                      }
+                    }}
+                    style={{ 
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.color = '#3b82f6';
+                      e.currentTarget.style.transform = 'translateX(2px)';
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.color = '';
+                      e.currentTarget.style.transform = 'translateX(0)';
+                    }}
+                    title={`Click to view ${t.symbol} details`}
+                  >
+                    <span className={`trade-symbol-dot ${t.direction}`}></span>
+                    <span style={{ 
+                      textDecoration: 'underline',
+                      textDecorationStyle: 'dotted',
+                      textDecorationColor: '#3b82f6',
+                    }}>
+                      {t.symbol}
+                    </span>
+                    <span style={{ fontSize: 10, opacity: 0.5 }}>↗</span>
+                  </div>
+                </td>
                                                 <td><span style={{ background: getSectorColor(t.sector || getSectorForSymbol(t.symbol)), color: '#fff', padding: '3px 8px', borderRadius: 8, fontSize: 10, fontWeight: 600, whiteSpace: 'nowrap' }}>{t.sector || getSectorForSymbol(t.symbol)}</span></td>
                 <td><span className={`badge badge-${t.direction}`}>{t.direction?.toUpperCase()}</span></td>
                 <td><span className={`badge badge-${t.tradeType}`}>{t.tradeType}</span></td>
@@ -2225,13 +2274,14 @@
     );
   }
 
-  // ============ CALENDAR ============
+  // ============ COMPACT CALENDAR ============
   function CalendarView({ month, setMonth, trades }) {
     const monthStart = startOfMonth(month);
     const monthEnd = endOfMonth(month);
     const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
     const startDay = getDay(monthStart);
     const empties = Array(startDay === 0 ? 6 : startDay - 1).fill(null);
+    
     const pnlMap = {};
     trades.filter(t => t.status === 'closed' && t.exitDate).forEach(t => {
       const d = t.exitDate;
@@ -2239,47 +2289,356 @@
       pnlMap[d].pnl += Number(t.pnl) || 0;
       pnlMap[d].count++;
     });
+    
     const monthKey = format(month, 'yyyy-MM');
     const monthTrades = trades.filter(t => t.status === 'closed' && t.exitDate?.startsWith(monthKey));
     const mPnL = monthTrades.reduce((s, t) => s + (Number(t.pnl) || 0), 0);
     const mWins = monthTrades.filter(t => Number(t.pnl) > 0).length;
+    const winRate = monthTrades.length > 0 ? Math.round(mWins / monthTrades.length * 100) : 0;
+
+    // Get max profit/loss for color intensity
+    const allPnLs = Object.values(pnlMap).map(d => d.pnl);
+    const maxProfit = Math.max(...allPnLs.filter(p => p > 0), 1);
+    const maxLoss = Math.abs(Math.min(...allPnLs.filter(p => p < 0), -1));
+
+    const getIntensity = (pnl) => {
+      if (pnl === 0) return 0;
+      if (pnl > 0) return Math.min(1, pnl / maxProfit);
+      return Math.min(1, Math.abs(pnl) / maxLoss);
+    };
 
     return (
-      <div className="chart-card">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
-          <button className="btn-icon" onClick={() => setMonth(subMonths(month, 1))}><Icons.ChevronLeft /></button>
-          <h3 style={{ fontSize: 17, fontWeight: 700 }}>{format(month, 'MMMM yyyy')}</h3>
-          <button className="btn-icon" onClick={() => setMonth(addMonths(month, 1))}><Icons.ChevronRight /></button>
-        </div>
-        <div className="calendar-grid">
-          {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d => <div key={d} className="calendar-day-header">{d}</div>)}
-          {empties.map((_, i) => <div key={`e${i}`} className="calendar-day empty"></div>)}
-          {days.map(day => {
-            const key = format(day, 'yyyy-MM-dd');
-            const d = pnlMap[key];
-            let cls = 'calendar-day';
-            if (isToday(day)) cls += ' today';
-            if (d) { cls += ' has-trades'; cls += d.pnl >= 0 ? ' profit' : ' loss'; }
-            return (
-              <div key={key} className={cls}>
-                <span className="day-number">{format(day, 'd')}</span>
-                {d && <span className={`day-pnl ${d.pnl >= 0 ? 'positive' : 'negative'}`}>{d.pnl >= 0 ? '+' : ''}{Math.round(d.pnl)}</span>}
-              </div>
-            );
-          })}
-        </div>
-        <div style={{ marginTop: 20, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
-          <div className="detail-item">
-            <label>Month P&L</label>
-            <div className={`value ${mPnL >= 0 ? 'pnl-positive' : 'pnl-negative'}`}>{fmtCurrencyWithSign(Math.round(mPnL))}</div>
+      <div style={{ maxWidth: 900, margin: '0 auto' }}>
+        {/* MONTH HEADER */}
+        <div style={{
+          background: 'var(--bg-card)',
+          borderRadius: 12,
+          padding: 16,
+          marginBottom: 16,
+          border: '1px solid var(--border-color)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 12,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button 
+              onClick={() => setMonth(subMonths(month, 1))}
+              style={{
+                background: 'var(--bg-input)',
+                border: 'none',
+                borderRadius: 8,
+                width: 36,
+                height: 36,
+                cursor: 'pointer',
+                color: 'var(--text-primary)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Icons.ChevronLeft />
+            </button>
+            <h3 style={{ fontSize: 18, fontWeight: 700, margin: 0, minWidth: 160, textAlign: 'center' }}>
+              {format(month, 'MMMM yyyy')}
+            </h3>
+            <button 
+              onClick={() => setMonth(addMonths(month, 1))}
+              style={{
+                background: 'var(--bg-input)',
+                border: 'none',
+                borderRadius: 8,
+                width: 36,
+                height: 36,
+                cursor: 'pointer',
+                color: 'var(--text-primary)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Icons.ChevronRight />
+            </button>
+            <button 
+              onClick={() => setMonth(new Date())}
+              style={{
+                padding: '6px 12px',
+                background: 'var(--accent-blue)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 8,
+                cursor: 'pointer',
+                fontSize: 12,
+                fontWeight: 600,
+              }}
+            >
+              Today
+            </button>
           </div>
-          <div className="detail-item"><label>Trades</label><div className="value">{monthTrades.length}</div></div>
-          <div className="detail-item"><label>Win Rate</label><div className="value">{monthTrades.length > 0 ? Math.round(mWins / monthTrades.length * 100) : 0}%</div></div>
+          
+          {/* MONTH STATS INLINE */}
+          <div style={{ display: 'flex', gap: 20, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>P&L</div>
+              <div style={{ 
+                fontSize: 18, 
+                fontWeight: 800,
+                color: mPnL >= 0 ? 'var(--accent-green)' : 'var(--accent-red)',
+              }}>
+                {mPnL >= 0 ? '+' : ''}₹{Math.abs(mPnL).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+              </div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Trades</div>
+              <div style={{ fontSize: 18, fontWeight: 800 }}>{monthTrades.length}</div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Win Rate</div>
+              <div style={{ 
+                fontSize: 18, 
+                fontWeight: 800,
+                color: winRate >= 50 ? 'var(--accent-green)' : 'var(--accent-red)',
+              }}>
+                {winRate}%
+              </div>
+            </div>
+          </div>
         </div>
+
+        {/* CALENDAR GRID */}
+        <div style={{
+          background: 'var(--bg-card)',
+          borderRadius: 12,
+          padding: 16,
+          border: '1px solid var(--border-color)',
+        }}>
+          {/* WEEKDAY HEADERS */}
+          <div style={{ 
+            display: 'grid', 
+            gridTemplateColumns: 'repeat(7, 1fr)', 
+            gap: 6, 
+            marginBottom: 6,
+          }}>
+            {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => (
+              <div key={d} style={{ 
+                fontSize: 10, 
+                textAlign: 'center', 
+                color: 'var(--text-muted)',
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: 1,
+                padding: 6,
+              }}>
+                {d}
+              </div>
+            ))}
+          </div>
+
+          {/* DAYS GRID */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6 }}>
+            {empties.map((_, i) => (
+              <div key={`e${i}`} style={{ aspectRatio: '1', minHeight: 60 }} />
+            ))}
+            {days.map(day => {
+              const key = format(day, 'yyyy-MM-dd');
+              const data = pnlMap[key];
+              const isCurrentDay = isToday(day);
+              const hasData = !!data;
+              const intensity = data ? getIntensity(data.pnl) : 0;
+              const isProfit = data?.pnl >= 0;
+
+              let bg = 'var(--bg-input)';
+              let border = '1px solid var(--border-color)';
+              let color = 'var(--text-primary)';
+
+              if (hasData) {
+                if (isProfit) {
+                  bg = `rgba(16, 185, 129, ${0.15 + intensity * 0.35})`;
+                  border = `1px solid rgba(16, 185, 129, ${0.3 + intensity * 0.5})`;
+                } else {
+                  bg = `rgba(239, 68, 68, ${0.15 + intensity * 0.35})`;
+                  border = `1px solid rgba(239, 68, 68, ${0.3 + intensity * 0.5})`;
+                }
+              }
+
+              if (isCurrentDay) {
+                border = '2px solid var(--accent-blue)';
+              }
+
+              return (
+                <div
+                  key={key}
+                  style={{
+                    aspectRatio: '1',
+                    minHeight: 60,
+                    background: bg,
+                    border: border,
+                    borderRadius: 8,
+                    padding: 6,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    cursor: hasData ? 'pointer' : 'default',
+                    transition: 'transform 0.15s',
+                    position: 'relative',
+                  }}
+                  onMouseEnter={e => hasData && (e.currentTarget.style.transform = 'scale(1.05)')}
+                  onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+                  title={hasData ? `${data.count} trade(s) | P&L: ₹${data.pnl.toFixed(0)}` : ''}
+                >
+                  <div style={{ 
+                    fontSize: 11, 
+                    fontWeight: isCurrentDay ? 800 : 600, 
+                    color: isCurrentDay ? 'var(--accent-blue)' : 'var(--text-secondary)',
+                  }}>
+                    {format(day, 'd')}
+                  </div>
+                  {hasData && (
+                    <div style={{ 
+                      fontSize: 10, 
+                      fontWeight: 700,
+                      color: isProfit ? 'var(--accent-green)' : 'var(--accent-red)',
+                      textAlign: 'right',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {isProfit ? '+' : ''}{data.pnl >= 1000 || data.pnl <= -1000 
+                        ? `${(data.pnl / 1000).toFixed(1)}K` 
+                        : Math.round(data.pnl)}
+                    </div>
+                  )}
+                  {hasData && data.count > 0 && (
+                    <div style={{
+                      position: 'absolute',
+                      top: 4,
+                      right: 4,
+                      background: isProfit ? 'var(--accent-green)' : 'var(--accent-red)',
+                      color: '#fff',
+                      fontSize: 8,
+                      fontWeight: 700,
+                      borderRadius: 8,
+                      minWidth: 14,
+                      height: 14,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '0 4px',
+                    }}>
+                      {data.count}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* LEGEND */}
+          <div style={{ 
+            marginTop: 16, 
+            padding: 12, 
+            background: 'var(--bg-input)', 
+            borderRadius: 8, 
+            display: 'flex', 
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            fontSize: 11,
+            color: 'var(--text-muted)',
+            flexWrap: 'wrap',
+            gap: 8,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span>Less</span>
+              <div style={{ display: 'flex', gap: 3 }}>
+                <div style={{ width: 12, height: 12, background: 'rgba(16,185,129,0.2)', borderRadius: 3 }} />
+                <div style={{ width: 12, height: 12, background: 'rgba(16,185,129,0.4)', borderRadius: 3 }} />
+                <div style={{ width: 12, height: 12, background: 'rgba(16,185,129,0.6)', borderRadius: 3 }} />
+                <div style={{ width: 12, height: 12, background: 'rgba(16,185,129,0.8)', borderRadius: 3 }} />
+              </div>
+              <span>More Profit</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span>Less</span>
+              <div style={{ display: 'flex', gap: 3 }}>
+                <div style={{ width: 12, height: 12, background: 'rgba(239,68,68,0.2)', borderRadius: 3 }} />
+                <div style={{ width: 12, height: 12, background: 'rgba(239,68,68,0.4)', borderRadius: 3 }} />
+                <div style={{ width: 12, height: 12, background: 'rgba(239,68,68,0.6)', borderRadius: 3 }} />
+                <div style={{ width: 12, height: 12, background: 'rgba(239,68,68,0.8)', borderRadius: 3 }} />
+              </div>
+              <span>More Loss</span>
+            </div>
+          </div>
+        </div>
+
+        {/* BEST/WORST DAYS */}
+        {monthTrades.length > 0 && (
+          <div style={{ 
+            marginTop: 16, 
+            display: 'grid', 
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+            gap: 12 
+          }}>
+            {(() => {
+              const bestDay = Object.entries(pnlMap)
+                .filter(([k]) => k.startsWith(monthKey))
+                .sort(([, a], [, b]) => b.pnl - a.pnl)[0];
+              const worstDay = Object.entries(pnlMap)
+                .filter(([k]) => k.startsWith(monthKey))
+                .sort(([, a], [, b]) => a.pnl - b.pnl)[0];
+              
+              return (
+                <>
+                  {bestDay && bestDay[1].pnl > 0 && (
+                    <div style={{ 
+                      padding: 14, 
+                      background: 'rgba(16,185,129,0.1)', 
+                      borderRadius: 10, 
+                      border: '1px solid rgba(16,185,129,0.3)' 
+                    }}>
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>
+                        🏆 Best Day
+                      </div>
+                      <div style={{ fontSize: 14, fontWeight: 700, marginTop: 4 }}>
+                        {format(parseISO(bestDay[0]), 'dd MMM yyyy')}
+                      </div>
+                      <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--accent-green)' }}>
+                        +₹{bestDay[1].pnl.toFixed(0)}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                        {bestDay[1].count} trade(s)
+                      </div>
+                    </div>
+                  )}
+                  {worstDay && worstDay[1].pnl < 0 && (
+                    <div style={{ 
+                      padding: 14, 
+                      background: 'rgba(239,68,68,0.1)', 
+                      borderRadius: 10, 
+                      border: '1px solid rgba(239,68,68,0.3)' 
+                    }}>
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>
+                        💔 Worst Day
+                      </div>
+                      <div style={{ fontSize: 14, fontWeight: 700, marginTop: 4 }}>
+                        {format(parseISO(worstDay[0]), 'dd MMM yyyy')}
+                      </div>
+                      <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--accent-red)' }}>
+                        ₹{worstDay[1].pnl.toFixed(0)}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                        {worstDay[1].count} trade(s)
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        )}
       </div>
     );
   }
-
   // ============ RULES ============
   function RulesPage({ rules, setRules }) {
     const [newRule, setNewRule] = useState('');
