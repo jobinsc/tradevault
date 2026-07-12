@@ -705,6 +705,9 @@
     const [importPreview, setImportPreview] = useState([]);
     const [selectedStock, setSelectedStock] = useState(null);
     const [showCalculator, setShowCalculator] = useState(false);
+    const [theme, setTheme] = useState(() => 
+  localStorage.getItem('tv_theme') || 'dark'
+);
         const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
         const [analyticsFilter, setAnalyticsFilter] = useState('all');
     const [portfolioFilter, setPortfolioFilter] = useState('all');
@@ -1463,6 +1466,20 @@
               >
                 🧮
               </button>
+              
+              <button
+  className="top-bar-btn"
+  onClick={() => {
+    const newTheme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(newTheme);
+    localStorage.setItem('tv_theme', newTheme);
+    document.documentElement.setAttribute('data-theme', newTheme);
+  }}
+  title="Toggle Theme"
+  style={{ fontSize: '18px' }}
+>
+  {theme === 'dark' ? '☀️' : '🌙'}
+</button>
                             <button 
                 className="btn btn-ghost" 
                 onClick={() => setShowShortcutsHelp(true)}
