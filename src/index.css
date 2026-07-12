@@ -975,3 +975,29 @@ body,
 @media (max-width: 480px) {
   .stats-grid { grid-template-columns: 1fr; }
 }
+/* ============ CHART TOOLTIPS THEME FIX ============ */
+.recharts-tooltip-wrapper .recharts-default-tooltip {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: 8px !important;
+  color: var(--text-primary) !important;
+}
+
+.recharts-tooltip-wrapper .recharts-tooltip-label {
+  color: var(--text-primary) !important;
+  font-weight: 600 !important;
+}
+
+.recharts-tooltip-wrapper .recharts-tooltip-item {
+  color: var(--text-secondary) !important;
+}
+
+/* Fix chart legend colors */
+.recharts-legend-item-text {
+  color: var(--text-secondary) !important;
+}
+
+/* Fix axis text */
+.recharts-cartesian-axis-tick-value {
+  fill: var(--text-muted) !important;
+}

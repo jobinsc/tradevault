@@ -210,11 +210,11 @@ function BasicCalculator() {
     }
   };
 
-  const btnStyle = (color) => ({
+    const btnStyle = (color) => ({
     padding: '18px',
     background: color || 'var(--bg-input)',
-    color: '#fff',
-    border: 'none',
+    color: color ? '#fff' : 'var(--text-primary)',
+    border: color ? 'none' : '1px solid var(--border-color)',
     borderRadius: 12,
     fontSize: 20,
     fontWeight: 600,

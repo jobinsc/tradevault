@@ -230,6 +230,82 @@ export const removeFromWatchlist = async (userId, itemId) => {
   }
 };
 
+// ============ USER SETTINGS ============
+// Get user settings from Firestore
+export const getUserSettings = async (userId) => {
+  try {
+    console.log('📥 [getUserSettings] Loading for user:', userId);
+    const userRef = doc(db, 'users', userId);
+    const userDoc = await getDoc(userRef);
+    if (userDoc.exists()) {
+      const data = userDoc.data();
+      console.log('📦 [getUserSettings] User doc data:', data);
+      const settings = data.settings || getDefaultSettings();
+      console.log('⚙️ [getUserSettings] Returning settings:', settings);
+      return settings;
+    }
+    console.log('⚠️ [getUserSettings] User doc doesn\'t exist, returning defaults');
+    return getDefaultSettings();
+  } catch (error) {
+    console.error('❌ [getUserSettings] Error:', error);
+    return getDefaultSettings();
+  }
+};
+
+// Save user settings to Firestore (uses setDoc with merge for reliability)
+export const saveUserSettings = async (userId, settings) => {
+  try {
+    console.log('📤 [saveUserSettings] Called with userId:', userId);
+    console.log('📤 [saveUserSettings] Settings:', settings);
+    const userRef = doc(db, 'users', userId);
+    await setDoc(userRef, {
+      settings: settings,
+      settingsUpdatedAt: new Date().toISOString(),
+    }, { merge: true });
+    console.log('✅ [saveUserSettings] Successfully saved to Firebase');
+    return { success: true };
+  } catch (error) {
+    console.error('❌ [saveUserSettings] Error:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+// Default settings
+export const getDefaultSettings = () => ({
+  // Appearance
+  theme: 'dark',
+  accentColor: 'blue',
+  fontSize: 'medium',
+  compactMode: false,
+  
+  // Trading Defaults
+  defaultTradeType: 'intraday',
+  defaultSegment: 'Equity - Cash',
+  defaultDirection: 'long',
+  defaultRiskPercent: 2,
+  defaultTimeframe: '15m',
+  
+  // Dashboard
+  showLivePrices: true,
+  autoRefreshInterval: 30,
+  showRecentTrades: true,
+  recentTradesCount: 5,
+  
+  // Display
+  currency: 'INR',
+  dateFormat: 'dd MMM yy',
+  showSectors: true,
+  showEmojis: true,
+  
+  // Notifications
+  showSuccessMessages: true,
+  showTradeNotifications: true,
+  successMessageDuration: 4000,
+  
+  // Advanced
+  confirmBeforeDelete: true,
+  autoBackup: false,
+});
 export const updateWatchlistItem = async (userId, itemId, updates) => {
   try {
     await updateDoc(doc(db, 'users', userId, 'watchlist', itemId), updates);

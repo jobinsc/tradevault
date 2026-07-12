@@ -5,6 +5,7 @@
   import IntradayZone from './IntradayZone';
   import TradeTypeFilter, { filterTradesByType, getTypeLabel } from './TradeTypeFilter';
   import ShortcutsHelpModal from './ShortcutsHelpModal';
+  import UserSettingsModal from './UserSettingsModal';
   import { v4 as uuidv4 } from 'uuid';
   import Papa from 'papaparse';
   import * as XLSX from 'xlsx';
@@ -35,6 +36,8 @@
     getRules as getRulesFromCloud,
     saveRules as saveRulesToCloud,
     migrateLocalDataToCloud,
+    getUserSettings,
+    saveUserSettings,
   } from './dataService';
   import { 
     fetchMultipleStockPrices, 
@@ -502,6 +505,106 @@
     const [dataLoading, setDataLoading] = useState(false);
     const [showMigrationPrompt, setShowMigrationPrompt] = useState(false);
       const [showAdminPanel, setShowAdminPanel] = useState(false);
+          
+    // ============ USER SETTINGS ============
+    const [userSettings, setUserSettings] = useState({
+      theme: 'dark',
+      accentColor: 'blue',
+      fontSize: 'medium',
+      compactMode: false,
+      defaultTradeType: 'intraday',
+      defaultSegment: 'Equity - Cash',
+      defaultDirection: 'long',
+      defaultRiskPercent: 2,
+      defaultTimeframe: '15m',
+      showLivePrices: true,
+      autoRefreshInterval: 30,
+      showRecentTrades: true,
+      recentTradesCount: 5,
+      currency: 'INR',
+      dateFormat: 'dd MMM yy',
+      showSectors: true,
+      showEmojis: true,
+      showSuccessMessages: true,
+      showTradeNotifications: true,
+      successMessageDuration: 4000,
+      confirmBeforeDelete: true,
+      autoBackup: false,
+    });
+    const [showUserSettings, setShowUserSettings] = useState(false);
+    const [theme, setTheme] = useState('dark');
+    
+    // Apply theme to document
+    useEffect(() => {
+      document.documentElement.setAttribute('data-theme', theme);
+    }, [theme]);
+    
+        const toggleTheme = () => {
+      const newTheme = theme === 'dark' ? 'light' : 'dark';
+      console.log('🎨 [toggleTheme] Switching to:', newTheme);
+      setTheme(newTheme);
+      const newSettings = { ...userSettings, theme: newTheme };
+      setUserSettings(newSettings);
+      
+      if (user) {
+        console.log('🎨 Saving theme to Firebase');
+        saveUserSettings(user.uid, newSettings)
+          .then(result => console.log('🎨 Theme save result:', result))
+          .catch(err => console.error('🎨 Theme save error:', err));
+      }
+    };
+    
+        const handleAutoSaveSettings = (newSettings) => {
+      console.log('⚡ [handleAutoSaveSettings] Called');
+      
+      setUserSettings(newSettings);
+      
+      if (newSettings.theme && newSettings.theme !== theme) {
+        setTheme(newSettings.theme);
+      }
+      
+      if (user) {
+        console.log('⚡ Auto-saving to Firebase for user:', user.uid);
+        saveUserSettings(user.uid, newSettings)
+          .then(result => console.log('⚡ Auto-save success:', result))
+          .catch(err => console.error('⚡ Auto-save error:', err));
+      }
+    };
+    
+    const handleSaveSettings = async (newSettings) => {
+      console.log('🎯 [handleSaveSettings] START');
+      console.log('🎯 [handleSaveSettings] newSettings:', newSettings);
+      console.log('🎯 [handleSaveSettings] user:', user?.uid);
+      
+      setUserSettings(newSettings);
+      
+      if (newSettings.theme && newSettings.theme !== theme) {
+        console.log('🎨 Changing theme from', theme, 'to', newSettings.theme);
+        setTheme(newSettings.theme);
+      }
+      
+      if (!user) {
+        console.error('❌ NO USER! Cannot save.');
+        showMsg('❌ Not logged in!');
+        return;
+      }
+      
+      try {
+        console.log('☁️ Calling saveUserSettings...');
+        const result = await saveUserSettings(user.uid, newSettings);
+        console.log('📤 Save result:', result);
+        
+        if (result.success) {
+          showMsg('⚙️ Settings saved successfully!');
+        } else {
+          showMsg('❌ Save failed: ' + (result.error || 'Unknown error'));
+          console.error('Save failed:', result);
+        }
+      } catch (error) {
+        console.error('❌ Exception during save:', error);
+        showMsg('❌ Error: ' + error.message);
+      }
+    };
         const [livePrices, setLivePrices] = useState({});
     const [pricesLoading, setPricesLoading] = useState(false);
     const [lastPriceUpdate, setLastPriceUpdate] = useState(null);
@@ -510,6 +613,21 @@
       try {
         const cloudTrades = await getTrades(userId);
         setTrades(cloudTrades);
+                
+        // Load user settings from cloud
+        try {
+          const cloudSettings = await getUserSettings(userId);
+          if (cloudSettings) {
+            setUserSettings(cloudSettings);
+            if (cloudSettings.theme) {
+              setTheme(cloudSettings.theme);
+            }
+          }
+        } catch (e) {
+          console.log('Settings load error:', e);
+
+          console.log('Settings load error:', e);
+        }
         
         const cloudRules = await getRulesFromCloud(userId);
         if (cloudRules.length > 0) {
@@ -705,9 +823,6 @@
     const [importPreview, setImportPreview] = useState([]);
     const [selectedStock, setSelectedStock] = useState(null);
     const [showCalculator, setShowCalculator] = useState(false);
-    const [theme, setTheme] = useState(() => 
-  localStorage.getItem('tv_theme') || 'dark'
-);
         const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
         const [analyticsFilter, setAnalyticsFilter] = useState('all');
     const [portfolioFilter, setPortfolioFilter] = useState('all');
@@ -1488,6 +1603,15 @@
               >
                 ⌨️
               </button>
+             
+              <button 
+                className="btn btn-ghost" 
+                onClick={() => setShowUserSettings(true)}
+                title="Settings"
+                style={{ padding: '10px 14px' }}
+              >
+                ⚙️
+              </button>
             </div>
           </div>
 
@@ -1574,7 +1698,7 @@
                           <CartesianGrid strokeDasharray="3 3" stroke="#2a3150" />
                           <XAxis dataKey="date" tick={{ fill: '#64748b', fontSize: 10 }} />
                           <YAxis tick={{ fill: '#64748b', fontSize: 10 }} />
-                          <Tooltip contentStyle={{ background: '#1a1f35', border: '1px solid #2a3150', borderRadius: 8 }} />
+                          <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 8, color: 'var(--text-primary)' }} />
                           <Area type="monotone" dataKey="capital" stroke="#3b82f6" fillOpacity={1} fill="url(#capGrad)" strokeWidth={2} />
                         </AreaChart>
                       </ResponsiveContainer>
@@ -1590,7 +1714,7 @@
                           <Pie data={typeData} innerRadius={55} outerRadius={90} paddingAngle={4} dataKey="value">
                             {typeData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
                           </Pie>
-                          <Tooltip contentStyle={{ background: '#1a1f35', border: '1px solid #2a3150', borderRadius: 8 }} />
+                          <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 8, color: 'var(--text-primary)' }} />
                           <Legend wrapperStyle={{ fontSize: 11 }} />
                         </PieChart>
                       </ResponsiveContainer>
@@ -1608,7 +1732,7 @@
                         <CartesianGrid strokeDasharray="3 3" stroke="#2a3150" />
                         <XAxis dataKey="date" tick={{ fill: '#64748b', fontSize: 10 }} />
                         <YAxis tick={{ fill: '#64748b', fontSize: 10 }} />
-                        <Tooltip contentStyle={{ background: '#1a1f35', border: '1px solid #2a3150', borderRadius: 8 }} />
+                        <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 8, color: 'var(--text-primary)' }} />
                         <Bar dataKey="pnl" radius={[4, 4, 0, 0]}>
                           {dailyData.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
                         </Bar>
@@ -2218,7 +2342,7 @@
                                 <CartesianGrid strokeDasharray="3 3" stroke="#2a3150" />
                                 <XAxis type="number" tick={{ fill: '#64748b', fontSize: 10 }} />
                                 <YAxis type="category" dataKey="name" width={120} tick={{ fill: '#94a3b8', fontSize: 11 }} />
-                                <Tooltip contentStyle={{ background: '#1a1f35', border: '1px solid #2a3150', borderRadius: 8 }} />
+                                <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 8, color: 'var(--text-primary)' }} />
                                 <Bar dataKey="pnl" radius={[0, 4, 4, 0]}>
                                   {filteredStrategyData.map((e, i) => <Cell key={i} fill={e.pnl >= 0 ? '#10b981' : '#ef4444'} />)}
                                 </Bar>
@@ -2387,6 +2511,14 @@
           </div>
         )}        {showCalculator && <CalculatorModal onClose={() => setShowCalculator(false)} />}
                 {showShortcutsHelp && <ShortcutsHelpModal onClose={() => setShowShortcutsHelp(false)} />}
+                          {showUserSettings && (
+          <UserSettingsModal 
+            currentSettings={userSettings}
+            onSave={handleSaveSettings}
+            onAutoSave={handleAutoSaveSettings}
+            onClose={() => setShowUserSettings(false)}
+          />
+        )}
         {showCapitalModal && (
           <div className="modal-overlay" onClick={() => setShowCapitalModal(false)}>
             <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
@@ -3575,7 +3707,7 @@
                 <CartesianGrid strokeDasharray="3 3" stroke="#2a3150" />
                 <XAxis dataKey="date" tick={{ fill: '#64748b', fontSize: 10 }} />
                 <YAxis tick={{ fill: '#64748b', fontSize: 10 }} label={{ value: '%', position: 'insideLeft', fill: '#64748b' }} />
-                <Tooltip contentStyle={{ background: '#1a1f35', border: '1px solid #2a3150', borderRadius: 8 }} />
+                <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 8, color: 'var(--text-primary)' }} />
                 <Area type="monotone" dataKey="drawdown" stroke="#ef4444" fillOpacity={1} fill="url(#ddGrad)" strokeWidth={2} />
               </AreaChart>
             </ResponsiveContainer>
@@ -3591,7 +3723,7 @@
                 <CartesianGrid strokeDasharray="3 3" stroke="#2a3150" />
                 <XAxis dataKey="month" tick={{ fill: '#64748b', fontSize: 11 }} />
                 <YAxis tick={{ fill: '#64748b', fontSize: 10 }} />
-                <Tooltip contentStyle={{ background: '#1a1f35', border: '1px solid #2a3150', borderRadius: 8 }} />
+                <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 8, color: 'var(--text-primary)' }} />
                 <Bar dataKey="pnl" radius={[4, 4, 0, 0]}>
                   {monthlyPerf.map((e, i) => <Cell key={i} fill={e.pnl >= 0 ? '#10b981' : '#ef4444'} />)}
                 </Bar>
@@ -3621,7 +3753,7 @@
               <CartesianGrid strokeDasharray="3 3" stroke="#2a3150" />
               <XAxis dataKey="day" tick={{ fill: '#94a3b8', fontSize: 12, fontWeight: 600 }} />
               <YAxis tick={{ fill: '#64748b', fontSize: 10 }} />
-              <Tooltip contentStyle={{ background: '#1a1f35', border: '1px solid #2a3150', borderRadius: 8 }} />
+              <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 8, color: 'var(--text-primary)' }} />
               <Bar dataKey="pnl" radius={[4, 4, 0, 0]}>
                 {dayPerf.map((e, i) => <Cell key={i} fill={e.pnl >= 0 ? '#10b981' : '#ef4444'} />)}
               </Bar>
