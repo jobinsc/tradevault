@@ -96,7 +96,7 @@
     setSymbolResults([]);
   };
 
-  const loadWatchlist = async () => {
+/*  const loadWatchlist = async () => {
     try {
       const data = await getWatchlist();
       setWatchlist(data || []);
@@ -130,7 +130,7 @@
     } catch (e) {
       alert('Failed to remove from watchlist');
     }
-  };
+  };*/
 
   // ============ ANALYTICS HELPERS ============
   const calculateAdvancedMetrics = (trades, capital) => {
@@ -1870,16 +1870,15 @@
                           <Legend 
   wrapperStyle={{ fontSize: 11, cursor: 'pointer' }}
   onClick={(data) => {
-    setPage('trades');
-    const typeName = data.value.toLowerCase();
-    if (typeName.includes('swing')) setFilterType('swing');
-    else if (typeName.includes('intraday')) setFilterType('intraday');
-    else if (typeName.includes('investment') || typeName.includes('sip')) setFilterType('investment');
-    else if (typeName.includes('delivery') || typeName.includes('long')) setFilterType('delivery');
-    else if (typeName.includes('positional')) setFilterType('positional');
-    else if (typeName.includes('scalp')) setFilterType('scalp');
-    else if (typeName.includes('btst')) setFilterType('btst');
-  }}
+  const typeName = data.name.toLowerCase();
+  if (typeName.includes('swing')) setFilter('swing');
+  else if (typeName.includes('intraday')) setFilter('intraday');
+  else if (typeName.includes('investment') || typeName.includes('sip')) setFilter('investment');
+  else if (typeName.includes('delivery') || typeName.includes('long')) setFilter('delivery');
+  else if (typeName.includes('positional')) setFilter('positional');
+  else if (typeName.includes('scalp')) setFilter('scalp');
+  setPage('trades');
+}}
 />
                         </PieChart>
                       </ResponsiveContainer>
