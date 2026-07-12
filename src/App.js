@@ -1,5 +1,6 @@
   import React, { useState, useEffect, useMemo } from 'react';
   import StockSearchModal from './StockSearchModal';
+  import StockDetailPage from './StockDetailPage';
   import { v4 as uuidv4 } from 'uuid';
   import Papa from 'papaparse';
   import * as XLSX from 'xlsx';
@@ -621,10 +622,23 @@
     const [selectedTrades, setSelectedTrades] = useState([]);
     const [showImportPreview, setShowImportPreview] = useState(false);
     const [importPreview, setImportPreview] = useState([]);
+        const [selectedStock, setSelectedStock] = useState(null);
+    const [previousPage, setPreviousPage] = useState('dashboard');
 
     
 
     const showMsg = (m) => { setMsg(m); setTimeout(() => setMsg(''), 4000); };
+    
+    const openStockDetail = (symbol) => {
+      setPreviousPage(page);
+      setSelectedStock(symbol);
+      setPage('stockDetail');
+    };
+
+    const closeStockDetail = () => {
+      setSelectedStock(null);
+      setPage(previousPage);
+    };
 
     // ============ SMART CALCULATIONS ============
     const stats = useMemo(() => {
@@ -1148,6 +1162,7 @@
       calendar: { t: 'Calendar', s: 'Daily P&L visualization' },
       rules: { t: 'Trading Rules', s: 'Pre-trade checklist' },
       import: { t: 'Import Trades', s: 'Upload from broker' },
+      stockDetail: { t: selectedStock || 'Stock Details', s: 'Full company info & chart' },
       settings: { t: 'Settings', s: 'Backup & configuration' },
     }[page] || { t: 'Dashboard', s: '' };
     // ============ AUTH GATE ============
@@ -1528,7 +1543,21 @@
                           }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: 10 }}>
                               <div>
-                                <div style={{ fontSize: 14, fontWeight: 700 }}>{trade.symbol}</div>
+                                                                <div 
+                                  onClick={() => openStockDetail(trade.symbol)}
+                                  style={{ 
+                                    fontSize: 14, 
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    color: 'var(--text-primary)',
+                                    transition: 'color 0.2s',
+                                  }}
+                                  onMouseEnter={e => e.currentTarget.style.color = '#3b82f6'}
+                                  onMouseLeave={e => e.currentTarget.style.color = 'var(--text-primary)'}
+                                  title={`Click to view ${trade.symbol} details`}
+                                >
+                                  {trade.symbol} ↗
+                                </div>
                                 <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
                                   {trade.tradeType} • {trade.direction}
                                 </div>
@@ -1604,7 +1633,8 @@
                       onDelete={deleteTrade}
                       onView={setViewTrade}
                       onDuplicate={duplicateTrade}
-                      selectable={false} />
+                      selectable={false} 
+                      onSymbolClick={openStockDetail}/>
                   ) : (
                     <div className="empty-state">
                       <div className="empty-state-icon">📈</div>
@@ -1751,7 +1781,8 @@
                     selectable={true}
                     selectedTrades={selectedTrades}
                     toggleSelection={toggleTradeSelection}
-                    selectAll={selectAllTrades} />
+                    selectAll={selectAllTrades} 
+                    onSymbolClick={openStockDetail}/>
                 ) : (
                   <div className="empty-state">
                     <div className="empty-state-icon">🔍</div>
@@ -1795,7 +1826,21 @@
                         <tbody>
                           {portfolio.map(t => (
                             <tr key={t.id}>
-                              <td><div className="trade-symbol"><span className="trade-symbol-dot long"></span>{t.symbol}</div></td>
+                              <td>
+                                <div 
+                                  className="trade-symbol"
+                                  onClick={() => openStockDetail(t.symbol)}
+                                  style={{ cursor: 'pointer', transition: 'all 0.2s' }}
+                                  onMouseEnter={e => e.currentTarget.style.color = '#3b82f6'}
+                                  onMouseLeave={e => e.currentTarget.style.color = ''}
+                                  title={`Click to view ${t.symbol} details`}
+                                >
+                                  <span className="trade-symbol-dot long"></span>
+                                  <span style={{ textDecoration: 'underline', textDecorationStyle: 'dotted' }}>
+                                    {t.symbol}
+                                  </span>
+                                </div>
+                              </td>
                               <td><span className={`badge badge-${t.tradeType}`}>{t.tradeType}</span></td>
                               <td style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{t.segment}</td>
                               <td>{format(parseISO(t.entryDate), 'dd MMM yy')}</td>
@@ -1914,6 +1959,15 @@
 
             {/* SYNOPSIS PAGE */}
             {page === 'synopsis' && <SynopsisReport trades={trades} capital={capital} stats={stats} />}
+            
+            {/* STOCK DETAIL PAGE */}
+            {page === 'stockDetail' && selectedStock && (
+              <StockDetailPage 
+                symbol={selectedStock} 
+                trades={trades} 
+                onBack={closeStockDetail}
+              />
+            )}
             {page === 'settings' && (
               <>
                 <div className="import-export-section">
@@ -2024,7 +2078,7 @@
   }
 
   // ============ TRADE TABLE WITH CHECKBOXES ============
-  function TradeTable({ trades, onEdit, onDelete, onView, onDuplicate, selectable, selectedTrades = [], toggleSelection, selectAll }) {
+  function TradeTable({ trades, onEdit, onDelete, onView, onDuplicate, selectable, selectedTrades = [], toggleSelection, selectAll, onSymbolClick }) {
     const allSelected = selectable && trades.length > 0 && trades.every(t => selectedTrades.includes(t.id));
     
     return (
