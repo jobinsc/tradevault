@@ -49,9 +49,11 @@ export const fetchStockPrice = async (symbol) => {
     const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1m&range=1d`;
     
     const proxies = [
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
       `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`,
       `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooUrl)}`,
-      `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
+      `https://cors-anywhere.herokuapp.com/${yahooUrl}`,
+      `https://thingproxy.freeboard.io/fetch/${yahooUrl}`,
     ];
     
     for (const proxyUrl of proxies) {

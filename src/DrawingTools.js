@@ -35,7 +35,6 @@ function DrawingTools({ activeTool, onToolSelect, onClearAll, drawingsCount = 0,
       zIndex: 100,
       boxShadow: '4px 4px 20px rgba(0,0,0,0.5)',
     }}>
-      {/* Title */}
       <div style={{
         fontSize: 8,
         color: text,
@@ -84,10 +83,8 @@ function DrawingTools({ activeTool, onToolSelect, onClearAll, drawingsCount = 0,
         </button>
       ))}
       
-      {/* Separator */}
       <div style={{ height: 1, background: border, margin: '4px 0' }}></div>
       
-      {/* Clear All */}
       <button
         onClick={onClearAll}
         title="Clear all drawings"
@@ -116,11 +113,9 @@ function DrawingTools({ activeTool, onToolSelect, onClearAll, drawingsCount = 0,
         🗑️
       </button>
       
-      {/* Count Badge */}
       {drawingsCount > 0 && (
         <div style={{
           fontSize: 10,
-          color: text,
           textAlign: 'center',
           padding: '2px 0',
           fontWeight: 700,
