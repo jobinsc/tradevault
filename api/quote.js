@@ -1,8 +1,11 @@
-// api/quote.js - Vercel Serverless Function for stock quote details
+// api/quote.js
+// Vercel Serverless Function to proxy Yahoo Finance quote summary (fundamentals)
+
 export default async function handler(req, res) {
   const { symbol } = req.query;
 
   if (!symbol) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
     return res.status(400).json({ error: 'Symbol required' });
   }
 
@@ -12,7 +15,8 @@ export default async function handler(req, res) {
   try {
     const response = await fetch(yahooUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json',
       },
     });
 
@@ -23,11 +27,16 @@ export default async function handler(req, res) {
     const data = await response.json();
     
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET');
-    res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=120');
     
     return res.status(200).json(data);
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    return res.status(500).json({ 
+      error: error.message,
+      symbol: symbol,
+    });
   }
 }

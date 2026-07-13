@@ -3,6 +3,9 @@
 
 // Cache to avoid too many API calls
 // Yahoo Finance symbols for Indian indices
+// Detect if running on production (Vercel) or localhost
+const IS_PRODUCTION = typeof window !== 'undefined' && window.location.hostname !== 'localhost';
+const API_BASE = IS_PRODUCTION ? '' : ''; // Empty means same domain
 export const INDEX_SYMBOLS = {
   'NIFTY': '^NSEI',
   'BANKNIFTY': '^NSEBANK',
@@ -45,15 +48,18 @@ export const fetchStockPrice = async (symbol) => {
   const cleanSymbol = symbol.toUpperCase().trim();
   
   try {
-       const yahooSymbol = getYahooSymbol(cleanSymbol);
+         const yahooSymbol = getYahooSymbol(cleanSymbol);
     const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1m&range=1d`;
     
-    const proxies = [
+    // Use our own API on production for speed
+    const proxies = IS_PRODUCTION ? [
+      `/api/yahoo?symbol=${yahooSymbol}&interval=1m&range=1d`,  // Our fast API
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
+      `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`,
+    ] : [
       `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
       `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`,
       `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooUrl)}`,
-      `https://cors-anywhere.herokuapp.com/${yahooUrl}`,
-      `https://thingproxy.freeboard.io/fetch/${yahooUrl}`,
     ];
     
     for (const proxyUrl of proxies) {
@@ -143,21 +149,21 @@ export const fetchStockDetails = async (symbol) => {
     return cached.data;
   }
   
-    const cleanSymbol = symbol.toUpperCase().trim();
+      const cleanSymbol = symbol.toUpperCase().trim();
   const yahooSymbol = getYahooSymbol(cleanSymbol);
   
-  // Yahoo Finance quoteSummary API
-  
-  // Yahoo Finance quoteSummary API - has detailed fundamentals
   const modules = 'summaryDetail,defaultKeyStatistics,financialData,assetProfile,price';
   const yahooUrl = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${yahooSymbol}?modules=${modules}`;
   
-  const proxies = [
+  const proxies = IS_PRODUCTION ? [
+    `/api/quote?symbol=${yahooSymbol}`,  // Our fast API
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
+    `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`,
+  ] : [
     `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`,
     `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
     `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooUrl)}`,
   ];
-  
   for (const proxyUrl of proxies) {
     try {
       const response = await fetch(proxyUrl);
@@ -284,11 +290,14 @@ export const fetchFullStockData = async (symbol) => {
 // FETCH HISTORICAL DATA FOR CANDLESTICK CHART
 // ─────────────────────────────────────────────
 export const fetchHistoricalData = async (symbol, range = '1mo', interval = '1d') => {
-   const cleanSymbol = symbol.toUpperCase().trim();
-  const yahooSymbol = getYahooSymbol(cleanSymbol);
+    const yahooSymbol = getYahooSymbol(cleanSymbol);
   const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=${interval}&range=${range}`;
   
-  const proxies = [
+  const proxies = IS_PRODUCTION ? [
+    `/api/yahoo?symbol=${yahooSymbol}&interval=${interval}&range=${range}`,  // Our fast API
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
+    `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`,
+  ] : [
     `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`,
     `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooUrl)}`,
     `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
@@ -401,15 +410,17 @@ export const searchStocks = async (query) => {
   if (cached && Date.now() - cached.timestamp < SEARCH_CACHE_TTL) {
     return cached.results;
   }
-
   const yahooUrl = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&lang=en-US&region=IN&quotesCount=15&newsCount=0&enableFuzzyQuery=false`;
 
-  const proxies = [
+  const proxies = IS_PRODUCTION ? [
+    `/api/search?q=${encodeURIComponent(query)}`,  // Our fast API
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
+    `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`,
+  ] : [
     `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`,
     `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
     `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooUrl)}`,
   ];
-
   for (const proxyUrl of proxies) {
     try {
       const controller = new AbortController();

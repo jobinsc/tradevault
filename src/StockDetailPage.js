@@ -16,6 +16,8 @@ import { auth } from './firebase';
 
 function EChartsStock({ symbol, userTrades = [], onSymbolChange }) {
   const chartRef = useRef(null);
+  const overlayCanvasRef = useRef(null);
+  const containerRef = useRef(null);
   const [userId, setUserId] = useState(auth.currentUser?.uid || null);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [indicatorsModalOpen, setIndicatorsModalOpen] = useState(false);
@@ -29,6 +31,15 @@ function EChartsStock({ symbol, userTrades = [], onSymbolChange }) {
   const [indicators, setIndicators] = useState({ ma20: true, volume: true });
   const [stockSettings, setStockSettings] = useState({});
   const [fullscreen, setFullscreen] = useState(false);
+  const [drawings, setDrawings] = useState([]);
+
+  const drawingRef = useRef({
+    isDrawing: false,
+    startX: 0,
+    startY: 0,
+    tool: 'cursor',
+    drawings: [],
+  });
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(user => {
@@ -125,6 +136,234 @@ function EChartsStock({ symbol, userTrades = [], onSymbolChange }) {
     const interval = setInterval(fetchLive, 10000);
     return () => clearInterval(interval);
   }, [symbol]);
+
+  // ═══════════ DRAWING TOOL LOGIC ═══════════
+  
+  // Keep drawingRef in sync with state
+  useEffect(() => {
+    drawingRef.current.tool = activeTool;
+    console.log('[DRAW] Active tool changed to:', activeTool);
+  }, [activeTool]);
+
+  useEffect(() => {
+    drawingRef.current.drawings = drawings;
+    redrawAll();
+  }, [drawings]);
+
+  // Resize overlay canvas to match container
+  useEffect(() => {
+    const resize = () => {
+      const canvas = overlayCanvasRef.current;
+      const container = containerRef.current;
+      if (!canvas || !container) return;
+      const rect = container.getBoundingClientRect();
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+      redrawAll();
+    };
+    // Wait for chart to render
+    const timer = setTimeout(resize, 300);
+    window.addEventListener('resize', resize);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', resize);
+    };
+  }, [loading, candles.length]);
+
+  const getCanvasPos = (e) => {
+    const canvas = overlayCanvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    };
+  };
+
+  const drawColor = isDarkTheme ? '#3b82f6' : '#1d4ed8';
+
+  const drawShape = (ctx, d, preview = false) => {
+    ctx.save();
+    ctx.strokeStyle = d.color || drawColor;
+    ctx.fillStyle = d.color || drawColor;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([]);
+    if (preview) ctx.globalAlpha = 0.7;
+
+    const { tool, x1, y1, x2, y2, text } = d;
+    const cw = ctx.canvas.width;
+    const ch = ctx.canvas.height;
+
+    switch (tool) {
+      case 'trendline':
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(x1, y1, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(x2, y2, 4, 0, Math.PI * 2); ctx.fill();
+        break;
+      case 'ray':
+        const dx = x2 - x1, dy = y2 - y1;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        ctx.beginPath(); ctx.moveTo(x1, y1);
+        if (len > 0) {
+          const s = 3000 / len;
+          ctx.lineTo(x1 + dx * s, y1 + dy * s);
+        }
+        ctx.stroke();
+        break;
+      case 'horizontal':
+        ctx.setLineDash([6, 3]);
+        ctx.beginPath(); ctx.moveTo(0, y1); ctx.lineTo(cw, y1); ctx.stroke();
+        break;
+      case 'vertical':
+        ctx.setLineDash([6, 3]);
+        ctx.beginPath(); ctx.moveTo(x1, 0); ctx.lineTo(x1, ch); ctx.stroke();
+        break;
+      case 'rectangle':
+        ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+        ctx.globalAlpha = 0.1;
+        ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+        break;
+      case 'fibonacci':
+        const levels = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+        const colors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#ef4444'];
+        const h = y2 - y1;
+        levels.forEach((lv, i) => {
+          const y = y1 + h * lv;
+          ctx.strokeStyle = colors[i];
+          ctx.setLineDash([4, 2]);
+          ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2 || cw, y); ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.font = 'bold 10px monospace';
+          ctx.fillStyle = colors[i];
+          ctx.fillText(`${(lv * 100).toFixed(1)}%`, x1 + 5, y - 3);
+        });
+        break;
+      case 'arrow':
+        const ang = Math.atan2(y2 - y1, x2 - x1);
+        const sz = 12;
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x2, y2);
+        ctx.lineTo(x2 - sz * Math.cos(ang - Math.PI / 6), y2 - sz * Math.sin(ang - Math.PI / 6));
+        ctx.lineTo(x2 - sz * Math.cos(ang + Math.PI / 6), y2 - sz * Math.sin(ang + Math.PI / 6));
+        ctx.closePath(); ctx.fill();
+        break;
+      case 'text':
+        if (text) {
+          ctx.font = 'bold 13px sans-serif';
+          ctx.fillText(text, x1, y1);
+        }
+        break;
+      default: break;
+    }
+    ctx.restore();
+  };
+
+  const redrawAll = () => {
+    const canvas = overlayCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawingRef.current.drawings.forEach(d => drawShape(ctx, d));
+  };
+
+  const handleMouseDown = (e) => {
+    const tool = drawingRef.current.tool;
+    console.log('[DRAW] MouseDown with tool:', tool);
+    if (tool === 'cursor') return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const pos = getCanvasPos(e);
+
+    if (tool === 'text') {
+      const t = window.prompt('Enter label text:');
+      if (t && t.trim()) {
+        setDrawings(prev => [...prev, {
+          id: Date.now(), tool: 'text',
+          x1: pos.x, y1: pos.y, x2: pos.x, y2: pos.y,
+          text: t.trim(), color: drawColor,
+        }]);
+      }
+      return;
+    }
+
+    if (tool === 'horizontal') {
+      setDrawings(prev => [...prev, {
+        id: Date.now(), tool: 'horizontal',
+        x1: 0, y1: pos.y, x2: overlayCanvasRef.current.width, y2: pos.y,
+        color: drawColor,
+      }]);
+      return;
+    }
+
+    if (tool === 'vertical') {
+      setDrawings(prev => [...prev, {
+        id: Date.now(), tool: 'vertical',
+        x1: pos.x, y1: 0, x2: pos.x, y2: overlayCanvasRef.current.height,
+        color: drawColor,
+      }]);
+      return;
+    }
+
+    drawingRef.current.isDrawing = true;
+    drawingRef.current.startX = pos.x;
+    drawingRef.current.startY = pos.y;
+  };
+
+  const handleMouseMove = (e) => {
+    if (!drawingRef.current.isDrawing) return;
+    const pos = getCanvasPos(e);
+    const canvas = overlayCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawingRef.current.drawings.forEach(d => drawShape(ctx, d));
+    drawShape(ctx, {
+      tool: drawingRef.current.tool,
+      x1: drawingRef.current.startX, y1: drawingRef.current.startY,
+      x2: pos.x, y2: pos.y, color: drawColor,
+    }, true);
+  };
+
+  const handleMouseUp = (e) => {
+    if (!drawingRef.current.isDrawing) return;
+    drawingRef.current.isDrawing = false;
+    const pos = getCanvasPos(e);
+    const dx = Math.abs(pos.x - drawingRef.current.startX);
+    const dy = Math.abs(pos.y - drawingRef.current.startY);
+    if (dx < 5 && dy < 5) { redrawAll(); return; }
+    setDrawings(prev => [...prev, {
+      id: Date.now(), tool: drawingRef.current.tool,
+      x1: drawingRef.current.startX, y1: drawingRef.current.startY,
+      x2: pos.x, y2: pos.y, color: drawColor,
+    }]);
+  };
+
+  const handleClearAll = () => {
+    setDrawings([]);
+    drawingRef.current.drawings = [];
+    const canvas = overlayCanvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+  };
+
+  useEffect(() => {
+    const kd = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        setDrawings(prev => prev.slice(0, -1));
+      }
+      const map = { v: 'cursor', t: 'trendline', h: 'horizontal', w: 'vertical', r: 'rectangle', f: 'fibonacci', a: 'text', y: 'arrow' };
+      if (!e.ctrlKey && !e.metaKey && !e.target.matches('input, textarea') && map[e.key.toLowerCase()]) {
+        setActiveTool(map[e.key.toLowerCase()]);
+      }
+    };
+    window.addEventListener('keydown', kd);
+    return () => window.removeEventListener('keydown', kd);
+  }, []);
+
+  // ═══════════ CHART LOGIC ═══════════
 
   const calculateMA = (data, period) => {
     const result = [];
@@ -377,6 +616,16 @@ function EChartsStock({ symbol, userTrades = [], onSymbolChange }) {
 
   const activeAdvancedCount = Object.values(advancedIndicators).filter(v => v && v.enabled).length;
 
+  const getCursorStyle = () => {
+    switch (activeTool) {
+      case 'cursor': return 'default';
+      case 'text': return 'text';
+      case 'horizontal': return 'row-resize';
+      case 'vertical': return 'col-resize';
+      default: return 'crosshair';
+    }
+  };
+
   return (
     <div style={{
       position: fullscreen ? 'fixed' : 'relative',
@@ -396,7 +645,7 @@ function EChartsStock({ symbol, userTrades = [], onSymbolChange }) {
         {onSymbolChange && (
           <SymbolSearchBar currentSymbol={symbol} onSymbolChange={onSymbolChange} theme={theme} />
         )}
-        <div style={{ 
+        <div style={{
           fontSize: 11, color: theme.text, padding: '4px 8px',
           background: theme.bg, borderRadius: 4, border: `1px solid ${theme.border}`,
         }}>
@@ -440,9 +689,9 @@ function EChartsStock({ symbol, userTrades = [], onSymbolChange }) {
               borderRadius: 6, fontSize: 11, fontWeight: 700,
               display: 'flex', alignItems: 'center', gap: 6,
             }}>
-              <span style={{ 
-                width: 8, height: 8, borderRadius: '50%', 
-                background: '#fff', animation: 'pulse 1.5s infinite' 
+              <span style={{
+                width: 8, height: 8, borderRadius: '50%',
+                background: '#fff', animation: 'pulse 1.5s infinite'
               }}></span>
               LIVE Rs{livePrice.toFixed(2)}
             </div>
@@ -499,17 +748,28 @@ function EChartsStock({ symbol, userTrades = [], onSymbolChange }) {
             )}
           </button>
         </div>
-        <div style={{ fontSize: 11, color: theme.text }}>
-          Scroll = Zoom - Drag = Pan - Hover = OHLC
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {activeTool !== 'cursor' && (
+            <div style={{
+              fontSize: 11, color: '#f59e0b', fontWeight: 700,
+              padding: '4px 8px', background: 'rgba(245,158,11,0.1)',
+              border: '1px solid #f59e0b', borderRadius: 4,
+            }}>
+              ✏️ {activeTool.toUpperCase()} | V=cancel | Ctrl+Z=undo
+            </div>
+          )}
+          <div style={{ fontSize: 11, color: theme.text }}>
+            Scroll=Zoom · Drag=Pan
+          </div>
         </div>
       </div>
 
-      <div style={{ position: 'relative', minHeight: 700 }}>
+      <div ref={containerRef} style={{ position: 'relative', minHeight: 700 }}>
         <DrawingTools
           activeTool={activeTool}
           onToolSelect={setActiveTool}
-          onClearAll={() => alert('Drawings cleared! Feature coming soon')}
-          drawingsCount={0}
+          onClearAll={handleClearAll}
+          drawingsCount={drawings.length}
           theme={theme}
         />
 
@@ -530,13 +790,32 @@ function EChartsStock({ symbol, userTrades = [], onSymbolChange }) {
             No data available for {symbol}
           </div>
         ) : (
-          <ReactECharts
-            ref={chartRef}
-            option={chartOption}
-            style={{ height: fullscreen ? window.innerHeight - 200 : 700, width: '100%' }}
-            theme={isDarkTheme ? 'dark' : 'light'}
-            notMerge={true}
-          />
+          <>
+            <ReactECharts
+              ref={chartRef}
+              option={chartOption}
+              style={{ height: fullscreen ? window.innerHeight - 200 : 700, width: '100%' }}
+              theme={isDarkTheme ? 'dark' : 'light'}
+              notMerge={true}
+            />
+            <canvas
+              ref={overlayCanvasRef}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                pointerEvents: activeTool === 'cursor' ? 'none' : 'auto',
+                cursor: getCursorStyle(),
+                zIndex: 10,
+              }}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseUp}
+            />
+          </>
         )}
       </div>
 
