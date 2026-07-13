@@ -1,11 +1,7 @@
 // src/priceService.js
-// Enhanced price service with full stock data (OHLC, Market Cap, P/E, EPS, etc.)
+// Enhanced price service with full stock data + Vercel API support
 
-// Cache to avoid too many API calls
 // Yahoo Finance symbols for Indian indices
-// Detect if running on production (Vercel) or localhost
-const IS_PRODUCTION = typeof window !== 'undefined' && window.location.hostname !== 'localhost';
-const API_BASE = IS_PRODUCTION ? '' : ''; // Empty means same domain
 export const INDEX_SYMBOLS = {
   'NIFTY': '^NSEI',
   'BANKNIFTY': '^NSEBANK',
@@ -20,126 +16,119 @@ export const INDEX_SYMBOLS = {
 };
 
 // Helper to convert symbol to Yahoo format
-const getYahooSymbol = (symbol) => {
+export const getYahooSymbol = (symbol) => {
   const upperSymbol = symbol.toUpperCase().trim();
   if (INDEX_SYMBOLS[upperSymbol]) {
     return INDEX_SYMBOLS[upperSymbol];
   }
   return `${upperSymbol}.NS`;
 };
+
+// Cache to avoid too many API calls
 const priceCache = {};
-const CACHE_DURATION = 30000; // 30 seconds
+const CACHE_DURATION = 30000;
 
 const detailCache = {};
-const DETAIL_CACHE_DURATION = 300000; // 5 minutes for detailed data
+const DETAIL_CACHE_DURATION = 300000;
+
+// Detect if running on production (Vercel)
+const IS_PRODUCTION = typeof window !== 'undefined' && window.location.hostname !== 'localhost';
 
 // ─────────────────────────────────────────────
-// FETCH BASIC PRICE (for Live Prices widget)
+// FETCH BASIC PRICE
 // ─────────────────────────────────────────────
 export const fetchStockPrice = async (symbol) => {
   const cacheKey = symbol.toUpperCase();
   const cached = priceCache[cacheKey];
   
-  // Return cached price if still fresh
   if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION) {
     return cached.data;
   }
   
   const cleanSymbol = symbol.toUpperCase().trim();
+  const yahooSymbol = getYahooSymbol(cleanSymbol);
+  const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1m&range=1d`;
   
-  try {
-         const yahooSymbol = getYahooSymbol(cleanSymbol);
-    const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1m&range=1d`;
-    
-    // Use our own API on production for speed
-    const proxies = IS_PRODUCTION ? [
-      `/api/yahoo?symbol=${yahooSymbol}&interval=1m&range=1d`,  // Our fast API
-      `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
-      `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`,
-    ] : [
-      `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
-      `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`,
-      `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooUrl)}`,
-    ];
-    
-    for (const proxyUrl of proxies) {
-      try {
-        const response = await fetch(proxyUrl);
-        const data = await response.json();
-        
-        if (data.chart && data.chart.result && data.chart.result[0]) {
-          const result = data.chart.result[0];
-          const meta = result.meta;
-          
-          // Get today's OHLC from the quote data
-          const quote = result.indicators?.quote?.[0];
-          const timestamps = result.timestamp || [];
-          
-          // Calculate today's open, high, low from the data
-          let todayOpen = meta.regularMarketOpen || meta.chartPreviousClose || 0;
-          let todayHigh = meta.regularMarketDayHigh || 0;
-          let todayLow = meta.regularMarketDayLow || 0;
-          let volume = meta.regularMarketVolume || 0;
-          
-          // If we have detailed quote data, use it
-          if (quote && quote.open && quote.open.length > 0) {
-            // Filter out null values
-            const opens = quote.open.filter(v => v !== null);
-            const highs = quote.high.filter(v => v !== null);
-            const lows = quote.low.filter(v => v !== null);
-            const volumes = quote.volume.filter(v => v !== null);
-            
-            if (opens.length > 0) todayOpen = opens[0];
-            if (highs.length > 0) todayHigh = Math.max(...highs);
-            if (lows.length > 0) todayLow = Math.min(...lows);
-            if (volumes.length > 0) volume = volumes.reduce((a, b) => a + b, 0);
-          }
-          
-          const priceData = {
-            symbol: cleanSymbol,
-            price: meta.regularMarketPrice || meta.chartPreviousClose || 0,
-            previousClose: meta.chartPreviousClose || meta.previousClose || 0,
-            open: todayOpen,
-            high: todayHigh,
-            low: todayLow,
-            dayHigh: todayHigh,  // Keep for backward compatibility
-            dayLow: todayLow,     // Keep for backward compatibility
-            volume: volume,
-            high52w: meta.fiftyTwoWeekHigh || 0,
-            low52w: meta.fiftyTwoWeekLow || 0,
-            currency: meta.currency || 'INR',
-            marketState: meta.marketState || 'CLOSED',
-            exchange: meta.exchangeName || 'NSE',
-            fullExchangeName: meta.fullExchangeName || '',
-            instrumentType: meta.instrumentType || 'EQUITY',
-            timezone: meta.timezone || 'IST',
-            lastUpdated: new Date(),
-            source: 'Yahoo Finance',
-          };
-          
-          // Cache the data
-          priceCache[cacheKey] = {
-            data: priceData,
-            timestamp: Date.now(),
-          };
-          
-          return priceData;
-        }
-      } catch (proxyError) {
-        continue;
-      }
-    }
-    
-    return null;
-  } catch (error) {
-    console.error(`Error fetching price for ${symbol}:`, error);
-    return null;
+  const proxies = [
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
+    `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`,
+    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooUrl)}`,
+  ];
+  
+  // Add our API first if in production
+  if (IS_PRODUCTION) {
+    proxies.unshift(`/api/yahoo?symbol=${encodeURIComponent(yahooSymbol)}&interval=1m&range=1d`);
   }
+  
+  for (const proxyUrl of proxies) {
+    try {
+      const response = await fetch(proxyUrl);
+      if (!response.ok) continue;
+      
+      const data = await response.json();
+      
+      if (data.chart && data.chart.result && data.chart.result[0]) {
+        const result = data.chart.result[0];
+        const meta = result.meta;
+        const quote = result.indicators?.quote?.[0];
+        const timestamps = result.timestamp || [];
+        
+        let todayOpen = meta.regularMarketOpen || meta.chartPreviousClose || 0;
+        let todayHigh = meta.regularMarketDayHigh || 0;
+        let todayLow = meta.regularMarketDayLow || 0;
+        let volume = meta.regularMarketVolume || 0;
+        
+        if (quote && quote.open && quote.open.length > 0) {
+          const opens = quote.open.filter(v => v !== null);
+          const highs = quote.high.filter(v => v !== null);
+          const lows = quote.low.filter(v => v !== null);
+          const volumes = quote.volume.filter(v => v !== null);
+          
+          if (opens.length > 0) todayOpen = opens[0];
+          if (highs.length > 0) todayHigh = Math.max(...highs);
+          if (lows.length > 0) todayLow = Math.min(...lows);
+          if (volumes.length > 0) volume = volumes.reduce((a, b) => a + b, 0);
+        }
+        
+        const priceData = {
+          symbol: cleanSymbol,
+          price: meta.regularMarketPrice || meta.chartPreviousClose || 0,
+          previousClose: meta.chartPreviousClose || meta.previousClose || 0,
+          open: todayOpen,
+          high: todayHigh,
+          low: todayLow,
+          dayHigh: todayHigh,
+          dayLow: todayLow,
+          volume: volume,
+          high52w: meta.fiftyTwoWeekHigh || 0,
+          low52w: meta.fiftyTwoWeekLow || 0,
+          currency: meta.currency || 'INR',
+          marketState: meta.marketState || 'CLOSED',
+          exchange: meta.exchangeName || 'NSE',
+          fullExchangeName: meta.fullExchangeName || '',
+          instrumentType: meta.instrumentType || 'EQUITY',
+          timezone: meta.timezone || 'IST',
+          lastUpdated: new Date(),
+          source: 'Yahoo Finance',
+        };
+        
+        priceCache[cacheKey] = {
+          data: priceData,
+          timestamp: Date.now(),
+        };
+        
+        return priceData;
+      }
+    } catch (proxyError) {
+      continue;
+    }
+  }
+  
+  return null;
 };
 
 // ─────────────────────────────────────────────
-// FETCH DETAILED STOCK INFO (for Detail Page)
-// Includes: Market Cap, P/E, EPS, Description, etc.
+// FETCH DETAILED STOCK INFO
 // ─────────────────────────────────────────────
 export const fetchStockDetails = async (symbol) => {
   const cacheKey = `detail_${symbol.toUpperCase()}`;
@@ -149,24 +138,27 @@ export const fetchStockDetails = async (symbol) => {
     return cached.data;
   }
   
-      const cleanSymbol = symbol.toUpperCase().trim();
+  const cleanSymbol = symbol.toUpperCase().trim();
   const yahooSymbol = getYahooSymbol(cleanSymbol);
   
   const modules = 'summaryDetail,defaultKeyStatistics,financialData,assetProfile,price';
   const yahooUrl = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${yahooSymbol}?modules=${modules}`;
   
-  const proxies = IS_PRODUCTION ? [
-    `/api/quote?symbol=${yahooSymbol}`,  // Our fast API
+  const proxies = [
     `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
     `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`,
-  ] : [
-    `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
     `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooUrl)}`,
   ];
+  
+  if (IS_PRODUCTION) {
+    proxies.unshift(`/api/quote?symbol=${encodeURIComponent(yahooSymbol)}`);
+  }
+  
   for (const proxyUrl of proxies) {
     try {
       const response = await fetch(proxyUrl);
+      if (!response.ok) continue;
+      
       const data = await response.json();
       
       if (data?.quoteSummary?.result?.[0]) {
@@ -178,38 +170,23 @@ export const fetchStockDetails = async (symbol) => {
         const priceInfo = result.price || {};
         
         const details = {
-          // Price info
           marketCap: priceInfo.marketCap?.raw || summary.marketCap?.raw || 0,
-          
-          // Fundamentals
           pe: summary.trailingPE?.raw || 0,
           forwardPe: summary.forwardPE?.raw || 0,
           eps: keyStats.trailingEps?.raw || 0,
           forwardEps: keyStats.forwardEps?.raw || 0,
           pegRatio: keyStats.pegRatio?.raw || 0,
           priceToBook: keyStats.priceToBook?.raw || 0,
-          
-          // Yield & Dividend
           dividendYield: summary.dividendYield?.raw ? (summary.dividendYield.raw * 100) : 0,
           dividendRate: summary.dividendRate?.raw || 0,
           exDividendDate: summary.exDividendDate?.fmt || null,
-          
-          // 52 Week
           high52w: summary.fiftyTwoWeekHigh?.raw || 0,
           low52w: summary.fiftyTwoWeekLow?.raw || 0,
-          
-          // Moving Averages
           fiftyDayAvg: summary.fiftyDayAverage?.raw || 0,
           twoHundredDayAvg: summary.twoHundredDayAverage?.raw || 0,
-          
-          // Volume
           volume: summary.volume?.raw || 0,
           avgVolume: summary.averageVolume?.raw || 0,
-          
-          // Beta
           beta: summary.beta?.raw || keyStats.beta?.raw || 0,
-          
-          // Company Profile
           description: profile.longBusinessSummary || '',
           industry: profile.industry || '',
           sector: profile.sector || '',
@@ -219,8 +196,6 @@ export const fetchStockDetails = async (symbol) => {
           city: profile.city || '',
           address: profile.address1 || '',
           phone: profile.phone || '',
-          
-          // Financials
           totalRevenue: financial.totalRevenue?.raw || 0,
           profitMargins: financial.profitMargins?.raw ? (financial.profitMargins.raw * 100) : 0,
           operatingMargins: financial.operatingMargins?.raw ? (financial.operatingMargins.raw * 100) : 0,
@@ -231,22 +206,17 @@ export const fetchStockDetails = async (symbol) => {
           debtToEquity: financial.debtToEquity?.raw || 0,
           totalCash: financial.totalCash?.raw || 0,
           totalDebt: financial.totalDebt?.raw || 0,
-          
-          // Analyst Recommendations
           targetHighPrice: financial.targetHighPrice?.raw || 0,
           targetLowPrice: financial.targetLowPrice?.raw || 0,
           targetMeanPrice: financial.targetMeanPrice?.raw || 0,
           recommendationKey: financial.recommendationKey || '',
           numberOfAnalystOpinions: financial.numberOfAnalystOpinions?.raw || 0,
-          
-          // Shares
           sharesOutstanding: keyStats.sharesOutstanding?.raw || 0,
           floatShares: keyStats.floatShares?.raw || 0,
           heldPercentInsiders: keyStats.heldPercentInsiders?.raw ? (keyStats.heldPercentInsiders.raw * 100) : 0,
           heldPercentInstitutions: keyStats.heldPercentInstitutions?.raw ? (keyStats.heldPercentInstitutions.raw * 100) : 0,
         };
         
-        // Cache the data
         detailCache[cacheKey] = {
           data: details,
           timestamp: Date.now(),
@@ -263,49 +233,28 @@ export const fetchStockDetails = async (symbol) => {
 };
 
 // ─────────────────────────────────────────────
-// FETCH COMBINED DATA (Price + Details)
-// This is what Stock Detail Page will use
-// ─────────────────────────────────────────────
-export const fetchFullStockData = async (symbol) => {
-  try {
-    // Fetch both in parallel
-    const [priceData, details] = await Promise.all([
-      fetchStockPrice(symbol),
-      fetchStockDetails(symbol),
-    ]);
-    
-    if (!priceData) return null;
-    
-    // Merge both
-    return {
-      ...priceData,
-      ...(details || {}),
-    };
-  } catch (error) {
-    console.error(`Error fetching full data for ${symbol}:`, error);
-    return null;
-  }
-};
-// ─────────────────────────────────────────────
-// FETCH HISTORICAL DATA FOR CANDLESTICK CHART
+// FETCH HISTORICAL DATA FOR CHART
 // ─────────────────────────────────────────────
 export const fetchHistoricalData = async (symbol, range = '1mo', interval = '1d') => {
-    const yahooSymbol = getYahooSymbol(cleanSymbol);
+  const cleanSymbol = symbol.toUpperCase().trim();
+  const yahooSymbol = getYahooSymbol(cleanSymbol);
   const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=${interval}&range=${range}`;
   
-  const proxies = IS_PRODUCTION ? [
-    `/api/yahoo?symbol=${yahooSymbol}&interval=${interval}&range=${range}`,  // Our fast API
+  const proxies = [
     `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
-    `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`,
-  ] : [
     `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`,
     `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooUrl)}`,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
   ];
+  
+  if (IS_PRODUCTION) {
+    proxies.unshift(`/api/yahoo?symbol=${encodeURIComponent(yahooSymbol)}&interval=${interval}&range=${range}`);
+  }
   
   for (const proxyUrl of proxies) {
     try {
       const response = await fetch(proxyUrl);
+      if (!response.ok) continue;
+      
       const data = await response.json();
       
       if (data.chart && data.chart.result && data.chart.result[0]) {
@@ -336,7 +285,9 @@ export const fetchHistoricalData = async (symbol, range = '1mo', interval = '1d'
           };
         }).filter(c => c !== null);
         
-        return candles;
+        if (candles.length > 0) {
+          return candles;
+        }
       }
     } catch (error) {
       continue;
@@ -345,8 +296,31 @@ export const fetchHistoricalData = async (symbol, range = '1mo', interval = '1d'
   
   return [];
 };
+
 // ─────────────────────────────────────────────
-// FETCH MULTIPLE STOCK PRICES (for dashboard widget)
+// FETCH COMBINED DATA
+// ─────────────────────────────────────────────
+export const fetchFullStockData = async (symbol) => {
+  try {
+    const [priceData, details] = await Promise.all([
+      fetchStockPrice(symbol),
+      fetchStockDetails(symbol),
+    ]);
+    
+    if (!priceData) return null;
+    
+    return {
+      ...priceData,
+      ...(details || {}),
+    };
+  } catch (error) {
+    console.error(`Error fetching full data for ${symbol}:`, error);
+    return null;
+  }
+};
+
+// ─────────────────────────────────────────────
+// FETCH MULTIPLE STOCK PRICES
 // ─────────────────────────────────────────────
 export const fetchMultipleStockPrices = async (symbols) => {
   const uniqueSymbols = [...new Set(symbols.map(s => s.toUpperCase()))];
@@ -389,7 +363,7 @@ export const calculateChangePercent = (currentPrice, entryPrice) => {
 };
 
 // ─────────────────────────────────────────────
-// CLEAR CACHE (for manual refresh)
+// CLEAR CACHE
 // ─────────────────────────────────────────────
 export const clearPriceCache = () => {
   Object.keys(priceCache).forEach(key => delete priceCache[key]);
@@ -397,7 +371,7 @@ export const clearPriceCache = () => {
 };
 
 // ─────────────────────────────────────────────
-// LIVE STOCK SEARCH via Yahoo Finance
+// LIVE STOCK SEARCH
 // ─────────────────────────────────────────────
 const SEARCH_CACHE = {};
 const SEARCH_CACHE_TTL = 15000;
@@ -410,17 +384,19 @@ export const searchStocks = async (query) => {
   if (cached && Date.now() - cached.timestamp < SEARCH_CACHE_TTL) {
     return cached.results;
   }
+
   const yahooUrl = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&lang=en-US&region=IN&quotesCount=15&newsCount=0&enableFuzzyQuery=false`;
 
-  const proxies = IS_PRODUCTION ? [
-    `/api/search?q=${encodeURIComponent(query)}`,  // Our fast API
+  const proxies = [
     `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
     `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`,
-  ] : [
-    `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
     `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooUrl)}`,
   ];
+  
+  if (IS_PRODUCTION) {
+    proxies.unshift(`/api/search?q=${encodeURIComponent(query)}`);
+  }
+
   for (const proxyUrl of proxies) {
     try {
       const controller = new AbortController();
