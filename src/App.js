@@ -10,6 +10,7 @@
   import { v4 as uuidv4 } from 'uuid';
   import Papa from 'papaparse';
   import * as XLSX from 'xlsx';
+  import Watchlist from './Watchlist';
   import {
     AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
     XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
@@ -1751,6 +1752,15 @@
 )}
             {page === 'dashboard' && (
               <>
+                      {/* Watchlist Widget */}
+        <div style={{ marginBottom: 20 }}>
+          <Watchlist 
+            onStockClick={(symbol) => {
+              setSelectedStock(symbol);
+              setPage('stockDetail');
+            }}
+          />
+        </div>
                 <div className="stats-grid">
                   <div className="stat-card green">
                     <div className="stat-card-header">
@@ -2663,10 +2673,18 @@
             {/* STOCK DETAIL PAGE */}
             {page === 'stockDetail' && selectedStock && (
               <StockDetailPage 
-                symbol={selectedStock} 
-                trades={trades} 
-                onBack={closeStockDetail}
-              />
+  symbol={selectedStock} 
+  trades={trades} 
+  onBack={(newSymbol) => {
+    if (newSymbol) {
+      // If new symbol passed, just change symbol (no reload!)
+      setSelectedStock(newSymbol);
+    } else {
+      // Go back to previous page
+      setPage('trades');
+    }
+  }}
+/>
             )}
             {page === 'settings' && (
               <>

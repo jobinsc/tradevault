@@ -2,6 +2,28 @@
 // Enhanced price service with full stock data (OHLC, Market Cap, P/E, EPS, etc.)
 
 // Cache to avoid too many API calls
+// Yahoo Finance symbols for Indian indices
+export const INDEX_SYMBOLS = {
+  'NIFTY': '^NSEI',
+  'BANKNIFTY': '^NSEBANK',
+  'SENSEX': '^BSESN',
+  'NIFTYMIDCAP': 'NIFTY_MIDCAP_100.NS',
+  'NIFTYSMALLCAP': '^CNXSC',
+  'NIFTYIT': '^CNXIT',
+  'NIFTYAUTO': '^CNXAUTO',
+  'NIFTYPHARMA': '^CNXPHARMA',
+  'NIFTYMETAL': '^CNXMETAL',
+  'NIFTYFMCG': '^CNXFMCG',
+};
+
+// Helper to convert symbol to Yahoo format
+const getYahooSymbol = (symbol) => {
+  const upperSymbol = symbol.toUpperCase().trim();
+  if (INDEX_SYMBOLS[upperSymbol]) {
+    return INDEX_SYMBOLS[upperSymbol];
+  }
+  return `${upperSymbol}.NS`;
+};
 const priceCache = {};
 const CACHE_DURATION = 30000; // 30 seconds
 
@@ -23,7 +45,7 @@ export const fetchStockPrice = async (symbol) => {
   const cleanSymbol = symbol.toUpperCase().trim();
   
   try {
-    const yahooSymbol = `${cleanSymbol}.NS`;
+       const yahooSymbol = getYahooSymbol(cleanSymbol);
     const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1m&range=1d`;
     
     const proxies = [
@@ -119,8 +141,10 @@ export const fetchStockDetails = async (symbol) => {
     return cached.data;
   }
   
-  const cleanSymbol = symbol.toUpperCase().trim();
-  const yahooSymbol = `${cleanSymbol}.NS`;
+    const cleanSymbol = symbol.toUpperCase().trim();
+  const yahooSymbol = getYahooSymbol(cleanSymbol);
+  
+  // Yahoo Finance quoteSummary API
   
   // Yahoo Finance quoteSummary API - has detailed fundamentals
   const modules = 'summaryDetail,defaultKeyStatistics,financialData,assetProfile,price';
@@ -254,7 +278,62 @@ export const fetchFullStockData = async (symbol) => {
     return null;
   }
 };
-
+// ─────────────────────────────────────────────
+// FETCH HISTORICAL DATA FOR CANDLESTICK CHART
+// ─────────────────────────────────────────────
+export const fetchHistoricalData = async (symbol, range = '1mo', interval = '1d') => {
+   const cleanSymbol = symbol.toUpperCase().trim();
+  const yahooSymbol = getYahooSymbol(cleanSymbol);
+  const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=${interval}&range=${range}`;
+  
+  const proxies = [
+    `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`,
+    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooUrl)}`,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
+  ];
+  
+  for (const proxyUrl of proxies) {
+    try {
+      const response = await fetch(proxyUrl);
+      const data = await response.json();
+      
+      if (data.chart && data.chart.result && data.chart.result[0]) {
+        const result = data.chart.result[0];
+        const timestamps = result.timestamp || [];
+        const quote = result.indicators?.quote?.[0];
+        
+        if (!quote) continue;
+        
+        const candles = timestamps.map((ts, i) => {
+          const open = quote.open[i];
+          const high = quote.high[i];
+          const low = quote.low[i];
+          const close = quote.close[i];
+          const volume = quote.volume[i];
+          
+          if (open === null || close === null) return null;
+          
+          return {
+            date: new Date(ts * 1000),
+            timestamp: ts,
+            open: Number(open?.toFixed(2)),
+            high: Number(high?.toFixed(2)),
+            low: Number(low?.toFixed(2)),
+            close: Number(close?.toFixed(2)),
+            volume: volume || 0,
+            isGreen: close >= open,
+          };
+        }).filter(c => c !== null);
+        
+        return candles;
+      }
+    } catch (error) {
+      continue;
+    }
+  }
+  
+  return [];
+};
 // ─────────────────────────────────────────────
 // FETCH MULTIPLE STOCK PRICES (for dashboard widget)
 // ─────────────────────────────────────────────
