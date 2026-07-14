@@ -39,13 +39,13 @@ const TopNav = ({
     });
   };
 
-  // ✅ UPDATED: Analytics → Analysis, PS Calculator → Calculator
+  // ✅ YOUR MENU - matches your existing pages
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: DashboardIcon },
     { id: 'analytics', label: 'Analysis', icon: AnalyticsIcon },
-    { id: 'positions', label: 'Positions', icon: PositionsIcon },
-    { id: 'track', label: 'Track', icon: TrackIcon },
-    { id: 'calculator', label: 'Calculator', icon: CalculatorIcon }
+    { id: 'portfolio', label: 'Portfolio', icon: PositionsIcon },
+    { id: 'trades', label: 'Trades', icon: TrackIcon },
+    { id: 'intradayZone', label: 'Intraday', icon: CalculatorIcon }
   ];
 
   const getUserInitial = () => {
@@ -60,7 +60,6 @@ const TopNav = ({
 
   return (
     <nav className="tv-topnav">
-      {/* ✅ UPDATED: Original TradeVault Logo */}
       <div className="tv-topnav-left">
         <div className="tv-logo">
           <div className="tv-logo-icon-original">

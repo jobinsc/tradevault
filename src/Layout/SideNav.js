@@ -7,17 +7,19 @@ import './Layout.css';
 
 const SideNav = ({ currentPage, onPageChange, isAdmin = false }) => {
   
+  // ✅ Admin only items
   const adminItems = [
+    { id: 'aiAnalysis', label: 'AI Analysis', icon: AIIcon, badge: 'AI' },
     { id: 'screener', label: 'Screener', icon: ScreenerIcon, badge: 'PRO' },
-    { id: 'ai-analysis', label: 'AI Analysis', icon: AIIcon, badge: 'AI' },
   ];
   
+  // ✅ Regular items - matches your existing pages
   const regularItems = [
-    { id: 'watchlist', label: 'Watchlist', icon: WatchlistIcon },
-    { id: 'import', label: 'Import Trades', icon: ImportIcon },
-    { id: 'rules', label: 'Trading Rules', icon: RulesIcon },
-    { id: 'reports', label: 'Reports', icon: ReportsIcon },
     { id: 'calendar', label: 'Calendar', icon: CalendarIcon },
+    { id: 'reports', label: 'Reports', icon: ReportsIcon },
+    { id: 'synopsis', label: 'Synopsis', icon: ReportsIcon },
+    { id: 'import', label: 'Import CSV', icon: ImportIcon },
+    { id: 'rules', label: 'Trading Rules', icon: RulesIcon },
   ];
 
   return (

@@ -1,5 +1,8 @@
-/* TRADEVAULT PRO - LAYOUT STYLES */
+/* ================================================
+   TRADEVAULT PRO - LAYOUT STYLES (PROFESSIONAL)
+   ================================================ */
 
+/* ===== TOP NAVIGATION ===== */
 .tv-topnav {
   position: fixed;
   top: 0;
@@ -14,15 +17,17 @@
   padding: 0 var(--space-xl);
   z-index: var(--z-topnav);
   backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
 }
 
 .tv-topnav-left {
   display: flex;
   align-items: center;
   gap: var(--space-lg);
-  min-width: 200px;
+  min-width: 220px;
 }
 
+/* ===== LOGO ===== */
 .tv-logo {
   display: flex;
   align-items: center;
@@ -30,15 +35,22 @@
   cursor: pointer;
 }
 
-.tv-logo-icon {
+.tv-logo-icon-original {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(139, 92, 246, 0.1));
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(135deg, #10B981, #3B82F6);
   border-radius: var(--radius-md);
-  border: 1px solid var(--border-medium);
+  font-size: 22px;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+}
+
+.tv-logo-text-container {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
 }
 
 .tv-logo-text {
@@ -48,16 +60,16 @@
   letter-spacing: -0.02em;
 }
 
-.tv-logo-badge {
-  font-size: 9px;
-  font-weight: var(--font-bold);
-  padding: 2px 6px;
-  background: linear-gradient(135deg, var(--accent-blue), var(--accent-violet));
-  color: white;
-  border-radius: var(--radius-sm);
-  letter-spacing: 0.05em;
+.tv-logo-subtitle {
+  font-size: 10px;
+  font-weight: var(--font-semibold);
+  color: var(--text-muted);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-top: 2px;
 }
 
+/* ===== TOP NAV CENTER (MENU) ===== */
 .tv-topnav-center {
   display: flex;
   align-items: center;
@@ -70,7 +82,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-  padding: 8px 14px;
+  padding: 8px 16px;
   background: transparent;
   border: none;
   color: var(--text-secondary);
@@ -91,7 +103,7 @@
 .tv-nav-item.active {
   background: var(--accent-blue);
   color: white;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.35);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
 }
 
 .tv-nav-icon-btn {
@@ -119,11 +131,12 @@
   color: white;
 }
 
+/* ===== TOP NAV RIGHT ===== */
 .tv-topnav-right {
   display: flex;
   align-items: center;
   gap: var(--space-md);
-  min-width: 200px;
+  min-width: 220px;
   justify-content: flex-end;
 }
 
@@ -161,6 +174,7 @@
   background: var(--bg-hover);
 }
 
+/* ===== USER MENU ===== */
 .tv-user-menu {
   position: relative;
 }
@@ -312,6 +326,7 @@
   background: var(--accent-red-glow);
 }
 
+/* ===== SIDE NAVIGATION (COLLAPSIBLE) ===== */
 .tv-sidenav {
   position: fixed;
   top: var(--topnav-height);
@@ -439,15 +454,18 @@
   opacity: 1;
 }
 
+/* ===== MAIN CONTENT (FIXED - No overlap!) ===== */
 .tv-main-content {
   margin-top: var(--topnav-height);
   margin-left: var(--sidenav-collapsed);
   min-height: calc(100vh - var(--topnav-height));
   background: var(--bg-primary);
   transition: margin-left var(--transition-base);
-  padding: var(--space-xl);
+  padding: var(--space-xl) var(--space-2xl);
+  overflow-x: hidden;
 }
 
+/* ===== ANIMATIONS ===== */
 @keyframes slideDown {
   from { opacity: 0; transform: translateY(-10px); }
   to { opacity: 1; transform: translateY(0); }
@@ -455,6 +473,14 @@
 
 .animate-slide-down { animation: slideDown 250ms ease-out; }
 
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-fade-in { animation: fadeIn 300ms ease-out; }
+
+/* ===== RESPONSIVE ===== */
 @media (max-width: 1024px) {
   .tv-nav-item span {
     display: none;
@@ -467,41 +493,6 @@
 
 @media (max-width: 768px) {
   .tv-topnav { padding: 0 var(--space-md); }
-  .tv-logo-text, .tv-logo-badge { display: none; }
+  .tv-logo-text, .tv-logo-subtitle { display: none; }
   .tv-main-content { padding: var(--space-md); }
-}
-/* ===== ORIGINAL LOGO STYLES ===== */
-
-.tv-logo-icon-original {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  background: linear-gradient(135deg, #10B981, #3B82F6);
-  border-radius: var(--radius-md);
-  font-size: 22px;
-  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.25);
-}
-
-.tv-logo-text-container {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.1;
-}
-
-.tv-logo-text {
-  font-size: var(--text-lg);
-  font-weight: var(--font-bold);
-  color: var(--text-primary);
-  letter-spacing: -0.02em;
-}
-
-.tv-logo-subtitle {
-  font-size: 10px;
-  font-weight: var(--font-semibold);
-  color: var(--text-muted);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  margin-top: 2px;
 }
