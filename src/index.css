@@ -1001,3 +1001,167 @@ body,
 .recharts-cartesian-axis-tick-value {
   fill: var(--text-muted) !important;
 }
+
+
+
+/* ═══════════════════════════════════════════════════
+   SIDEBAR COLLAPSE - COMPLETE CLEAN VERSION
+   ═══════════════════════════════════════════════════ */
+
+/* Sidebar is fixed positioned - override with flexbox layout */
+.app-container {
+  display: flex !important;
+  width: 100vw;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+.sidebar {
+  position: fixed !important;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  width: 260px;
+  min-width: 260px;
+  transition: width 0.25s ease, min-width 0.25s ease, transform 0.3s ease;
+  z-index: 100;
+}
+
+/* Main content - starts after sidebar */
+.main-content {
+  flex: 1;
+  margin-left: 260px !important;
+  min-height: 100vh;
+  width: calc(100vw - 260px) !important;
+  max-width: calc(100vw - 260px) !important;
+  box-sizing: border-box;
+  transition: margin-left 0.25s ease, width 0.25s ease, max-width 0.25s ease;
+}
+
+/* ────── COLLAPSED STATE ────── */
+
+.sidebar.collapsed {
+  width: 60px !important;
+  min-width: 60px !important;
+  max-width: 60px !important;
+}
+
+/* Main content expands when sidebar collapsed */
+.sidebar.collapsed ~ .main-content,
+.app-container:has(.sidebar.collapsed) .main-content {
+  margin-left: 60px !important;
+  width: calc(100vw - 60px) !important;
+  max-width: calc(100vw - 60px) !important;
+}
+
+/* Blue toggle button */
+.sidebar-collapse-btn {
+  position: absolute;
+  right: -13px;
+  top: 24px;
+  width: 26px;
+  height: 26px;
+  background: #3b82f6;
+  color: #fff;
+  border: 2px solid var(--bg-primary, #0f172a);
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 0;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  line-height: 1;
+}
+
+.sidebar-collapse-btn:hover {
+  transform: scale(1.15);
+  background: #2563eb;
+}
+
+/* Hide text stuff when collapsed */
+.sidebar.collapsed .logo-text,
+.sidebar.collapsed .nav-section-title,
+.sidebar.collapsed .nav-badge,
+.sidebar.collapsed .capital-display,
+.sidebar.collapsed .capital-label,
+.sidebar.collapsed .capital-amount,
+.sidebar.collapsed .capital-edit-btn,
+.sidebar.collapsed .sidebar-footer > div,
+.sidebar.collapsed .sidebar-footer button {
+  display: none !important;
+}
+
+.sidebar.collapsed .sidebar-header .logo-icon {
+  display: flex !important;
+}
+
+.sidebar.collapsed .sidebar-header {
+  justify-content: center !important;
+  padding: 12px 0 !important;
+}
+
+/* Nav items - just icons */
+.sidebar.collapsed .nav-item {
+  padding: 12px !important;
+  justify-content: center !important;
+  gap: 0 !important;
+  width: 100% !important;
+  box-sizing: border-box;
+  font-size: 0 !important;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.sidebar.collapsed .nav-item > * {
+  font-size: 20px !important;
+}
+
+.sidebar.collapsed .nav-item > *:not(:first-child) {
+  display: none !important;
+}
+
+/* Tooltip on hover */
+.sidebar.collapsed .nav-item {
+  position: relative;
+}
+
+.sidebar.collapsed .nav-item:hover::after {
+  content: attr(data-label);
+  position: absolute;
+  left: calc(100% + 16px);
+  top: 50%;
+  transform: translateY(-50%);
+  background: #1e293b;
+  color: #fff;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 13px !important;
+  font-weight: 600;
+  white-space: nowrap;
+  z-index: 10000;
+  border: 1px solid #334155;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  pointer-events: none;
+}
+
+.sidebar.collapsed .nav-item:hover::before {
+  content: '';
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  border: 6px solid transparent;
+  border-right-color: #1e293b;
+  z-index: 10000;
+  pointer-events: none;
+}
+
+.sidebar.collapsed .sidebar-nav,
+.sidebar.collapsed .sidebar-header,
+.sidebar.collapsed .sidebar-footer {
+  overflow: hidden !important;
+}

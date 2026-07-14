@@ -23,7 +23,9 @@
   import { onAuthStateChanged, signOut } from 'firebase/auth';
   import { auth, isAdmin } from './firebase';
   import AuthPage from './AuthPage';
-  import AdminPanel from './AdminPanel';import SymbolAutocomplete from './SymbolAutocomplete';
+  import AdminPanel from './AdminPanel';
+import ScreenerPage from './screener/ScreenerPage';
+import SymbolAutocomplete from './SymbolAutocomplete';
   import { getSectorForSymbol, getAllSectors, getSectorColor } from './sectorsDatabase';
   import 
   {
@@ -810,7 +812,9 @@
       }
     };
     
-    const [page, setPage] = useState('dashboard');
+    const [page, setPage] = useState(() => {
+  return localStorage.getItem('tv_currentPage') || 'dashboard';
+});
     const [showTradeModal, setShowTradeModal] = useState(false);
     const [editTrade, setEditTrade] = useState(null);
     const [viewTrade, setViewTrade] = useState(null);
@@ -824,7 +828,30 @@
     const [selectedTrades, setSelectedTrades] = useState([]);
     const [showImportPreview, setShowImportPreview] = useState(false);
     const [importPreview, setImportPreview] = useState([]);
-    const [selectedStock, setSelectedStock] = useState(null);
+    const [selectedStock, setSelectedStock] = useState(() => {
+  return localStorage.getItem('tv_selectedStock') || null;
+});
+
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    return localStorage.getItem('tv_sidebarCollapsed') === 'true';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('tv_sidebarCollapsed', sidebarCollapsed);
+  }, [sidebarCollapsed]);
+  // Save current page to localStorage
+  useEffect(() => {
+    localStorage.setItem('tv_currentPage', page);
+  }, [page]);
+
+  // Save selected stock to localStorage
+  useEffect(() => {
+    if (selectedStock) {
+      localStorage.setItem('tv_selectedStock', selectedStock);
+    } else {
+      localStorage.removeItem('tv_selectedStock');
+    }
+  }, [selectedStock]);
     const [showCalculator, setShowCalculator] = useState(false);
     const [showAIAnalysis, setShowAIAnalysis] = useState(false);
         const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
@@ -839,10 +866,25 @@
     const showMsg = (m) => { setMsg(m); setTimeout(() => setMsg(''), 4000); };
     
     const openStockDetail = (symbol) => {
-      setPreviousPage(page);
-      setSelectedStock(symbol);
-      setPage('stockDetail');
-    };
+  // Remember previous page (screener or wherever)
+  setPreviousPage(page);
+  setSelectedStock(symbol);
+  setPage('stockDetail');
+};
+
+const goBackFromStock = () => {
+  // Check if user came from screener
+  const lastScreener = sessionStorage.getItem('lastScreenerData');
+  if (lastScreener && previousPage === 'screener') {
+    // Return to screener page
+    setSelectedStock(null);
+    setPage('screener');
+  } else {
+    // Go back to previous page normally
+    setSelectedStock(null);
+    setPage(previousPage);
+  }
+};
 
     const closeStockDetail = () => {
       setSelectedStock(null);
@@ -1447,7 +1489,14 @@
   
     return (
       <div className="app-container">
-        <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
+                <aside className={`sidebar ${sidebarOpen ? 'open' : ''} ${sidebarCollapsed ? 'collapsed' : ''}`}>
+                    <button 
+            className="sidebar-collapse-btn"
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+            title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {sidebarCollapsed ? '›' : '‹'}
+          </button>
           <div className="sidebar-header">
             <div className="logo-container">
               <div className="logo-icon">📊</div>
@@ -1470,8 +1519,10 @@
   { id: 'reports', icon: <Icons.Analytics />, label: 'Detailed Report' },
   { id: 'synopsis', icon: <Icons.Analytics />, label: 'Quick Synopsis' },
               { id: 'calendar', icon: <Icons.Calendar />, label: 'Calendar' },
+              { id: 'screener', icon: <Icons.Analytics />, label: '🔍 Screener' },
             ].map(item => (
               <div key={item.id} className={`nav-item ${page === item.id ? 'active' : ''}`}
+                data-label={item.label}
                 onClick={() => { setPage(item.id); setSidebarOpen(false); setSelectedTrades([]); }}>
                 <span>{item.icon}</span>
                 {item.label}
@@ -1485,6 +1536,7 @@
               { id: 'settings', icon: <Icons.Settings />, label: 'Settings' },
             ].map(item => (
               <div key={item.id} className={`nav-item ${page === item.id ? 'active' : ''}`}
+                  data-label={item.label}
                 onClick={() => { setPage(item.id); setSidebarOpen(false); setSelectedTrades([]); }}>
                 <span>{item.icon}</span>
                 {item.label}
@@ -1760,6 +1812,7 @@
               setPage('stockDetail');
             }}
           />
+          
         </div>
                 <div className="stats-grid">
                   <div className="stat-card green">
@@ -2669,7 +2722,14 @@
                 onSymbolClick={openStockDetail}
               />
             )}
-            
+                        {/* 🔍 SCREENER PAGE - ADMIN ONLY */}
+            {page === 'screener' && isAdmin(user) && (
+              <ScreenerPage 
+                user={user}
+                onSymbolClick={openStockDetail}
+                onClose={() => setPage('dashboard')}
+              />
+            )}
             {/* STOCK DETAIL PAGE */}
             {page === 'stockDetail' && selectedStock && (
               <StockDetailPage 
@@ -2677,11 +2737,11 @@
   trades={trades} 
   onBack={(newSymbol) => {
     if (newSymbol) {
-      // If new symbol passed, just change symbol (no reload!)
+      /// Different symbol - just change symbol
       setSelectedStock(newSymbol);
     } else {
-      // Go back to previous page
-      setPage('trades');
+      // Go back button clicked
+      goBackFromStock();
     }
   }}
 />

@@ -6,16 +6,26 @@ import { fetchStockPrice, fetchFullStockData, fetchHistoricalData } from './pric
 import SymbolSearchBar from './SymbolSearchBar';
 import IndicatorsModal from './IndicatorsModal';
 import DrawingTools from './DrawingTools';
+import LightweightChartView from './LightweightChartView';
 import { 
   saveGlobalChartSettings, 
   loadGlobalChartSettings,
   saveStockChartSettings,
   loadStockChartSettings 
 } from './chartSettingsService';
+import { saveDrawings, loadDrawings, clearDrawings } from './drawingsService';
 import { auth } from './firebase';
 
 function EChartsStock({ symbol, userTrades = [], onSymbolChange }) {
   const chartRef = useRef(null);
+    const axisDragRef = useRef({
+    isDraggingY: false,
+    isDraggingX: false,
+    startY: 0,
+    startX: 0,
+    startZoomStart: 0,
+    startZoomEnd: 100,
+  });
   const overlayCanvasRef = useRef(null);
   const containerRef = useRef(null);
   const [userId, setUserId] = useState(auth.currentUser?.uid || null);
@@ -32,6 +42,15 @@ function EChartsStock({ symbol, userTrades = [], onSymbolChange }) {
   const [stockSettings, setStockSettings] = useState({});
   const [fullscreen, setFullscreen] = useState(false);
   const [drawings, setDrawings] = useState([]);
+    const [chartEngine, setChartEngine] = useState(() => {
+    return localStorage.getItem('tv_chartEngine') || 'echarts';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('tv_chartEngine', chartEngine);
+  }, [chartEngine]);
+  const [drawingsLoaded, setDrawingsLoaded] = useState(false);
+  const [toolbarCollapsed, setToolbarCollapsed] = useState(false);
 
   const drawingRef = useRef({
     isDrawing: false,
@@ -139,10 +158,8 @@ function EChartsStock({ symbol, userTrades = [], onSymbolChange }) {
 
   // ═══════════ DRAWING TOOL LOGIC ═══════════
   
-  // Keep drawingRef in sync with state
   useEffect(() => {
     drawingRef.current.tool = activeTool;
-    console.log('[DRAW] Active tool changed to:', activeTool);
   }, [activeTool]);
 
   useEffect(() => {
@@ -150,7 +167,192 @@ function EChartsStock({ symbol, userTrades = [], onSymbolChange }) {
     redrawAll();
   }, [drawings]);
 
-  // Resize overlay canvas to match container
+  // Load drawings from Firebase when symbol/user changes
+  useEffect(() => {
+    const load = async () => {
+      setDrawingsLoaded(false);
+      const savedDrawings = await loadDrawings(userId, symbol);
+      setDrawings(savedDrawings || []);
+      setDrawingsLoaded(true);
+    };
+    load();
+  }, [symbol, userId]);
+
+  // Save drawings to Firebase (debounced)
+  useEffect(() => {
+    if (!drawingsLoaded) return;
+    const timer = setTimeout(() => {
+      saveDrawings(userId, symbol, drawings);
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [drawings, symbol, userId, drawingsLoaded]);
+
+    // ═══════════ TRADINGVIEW-STYLE AXIS DRAG ZOOM ═══════════
+  useEffect(() => {
+    if (loading || candles.length === 0) return;
+
+    const chartInstance = chartRef.current?.getEchartsInstance();
+    if (!chartInstance) return;
+
+    const zr = chartInstance.getZr();
+    const chartDom = chartInstance.getDom();
+    if (!zr || !chartDom) return;
+
+    let dragMode = null; // 'y' or 'x' or null
+
+    const getMousePos = (e) => {
+      const rect = chartDom.getBoundingClientRect();
+      return {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+      };
+    };
+
+    const isInYAxisArea = (pos) => {
+      // Right side of chart - price axis area
+      const width = chartDom.offsetWidth;
+      return pos.x > width - 60 && pos.y > 60 && pos.y < chartDom.offsetHeight - 40;
+    };
+
+    const isInXAxisArea = (pos) => {
+      // Bottom of chart - date axis area
+      const height = chartDom.offsetHeight;
+      return pos.y > height - 40 && pos.x > 40 && pos.x < chartDom.offsetWidth - 60;
+    };
+
+    const handleMouseDown = (e) => {
+      const pos = getMousePos(e);
+
+      if (isInYAxisArea(pos)) {
+        dragMode = 'y';
+        const opt = chartInstance.getOption();
+        axisDragRef.current = {
+          isDraggingY: true,
+          isDraggingX: false,
+          startY: e.clientY,
+          startX: e.clientX,
+          startZoomStart: opt.dataZoom[1]?.start ?? 0,
+          startZoomEnd: opt.dataZoom[1]?.end ?? 100,
+        };
+        chartDom.style.cursor = 'ns-resize';
+        e.preventDefault();
+      } else if (isInXAxisArea(pos)) {
+        dragMode = 'x';
+        const opt = chartInstance.getOption();
+        axisDragRef.current = {
+          isDraggingY: false,
+          isDraggingX: true,
+          startY: e.clientY,
+          startX: e.clientX,
+          startZoomStart: opt.dataZoom[0]?.start ?? 0,
+          startZoomEnd: opt.dataZoom[0]?.end ?? 100,
+        };
+        chartDom.style.cursor = 'ew-resize';
+        e.preventDefault();
+      }
+    };
+
+    const handleMouseMove = (e) => {
+      const pos = getMousePos(e);
+
+      // Cursor hint when hovering axis
+      if (!dragMode) {
+        if (isInYAxisArea(pos)) {
+          chartDom.style.cursor = 'ns-resize';
+        } else if (isInXAxisArea(pos)) {
+          chartDom.style.cursor = 'ew-resize';
+        } else {
+          chartDom.style.cursor = 'default';
+        }
+        return;
+      }
+
+      // Y-axis drag (price zoom)
+      if (dragMode === 'y' && axisDragRef.current.isDraggingY) {
+        const dy = e.clientY - axisDragRef.current.startY;
+        const zoomFactor = 1 + (dy / 200); // drag down = zoom out, up = zoom in
+        const currentRange = axisDragRef.current.startZoomEnd - axisDragRef.current.startZoomStart;
+        let newRange = currentRange * zoomFactor;
+        newRange = Math.max(2, Math.min(100, newRange));
+        const center = (axisDragRef.current.startZoomStart + axisDragRef.current.startZoomEnd) / 2;
+        let newStart = center - newRange / 2;
+        let newEnd = center + newRange / 2;
+        if (newStart < 0) { newEnd -= newStart; newStart = 0; }
+        if (newEnd > 100) { newStart -= (newEnd - 100); newEnd = 100; }
+        newStart = Math.max(0, newStart);
+        newEnd = Math.min(100, newEnd);
+        chartInstance.dispatchAction({
+          type: 'dataZoom',
+          dataZoomIndex: 1,
+          start: newStart,
+          end: newEnd,
+        });
+      }
+
+      // X-axis drag (date zoom)
+      if (dragMode === 'x' && axisDragRef.current.isDraggingX) {
+        const dx = e.clientX - axisDragRef.current.startX;
+        const zoomFactor = 1 - (dx / 300); // drag right = zoom in, left = zoom out
+        const currentRange = axisDragRef.current.startZoomEnd - axisDragRef.current.startZoomStart;
+        let newRange = currentRange * zoomFactor;
+        newRange = Math.max(2, Math.min(100, newRange));
+        const center = (axisDragRef.current.startZoomStart + axisDragRef.current.startZoomEnd) / 2;
+        let newStart = center - newRange / 2;
+        let newEnd = center + newRange / 2;
+        if (newStart < 0) { newEnd -= newStart; newStart = 0; }
+        if (newEnd > 100) { newStart -= (newEnd - 100); newEnd = 100; }
+        newStart = Math.max(0, newStart);
+        newEnd = Math.min(100, newEnd);
+        chartInstance.dispatchAction({
+          type: 'dataZoom',
+          dataZoomIndex: 0,
+          start: newStart,
+          end: newEnd,
+        });
+      }
+    };
+
+    const handleMouseUp = () => {
+      dragMode = null;
+      axisDragRef.current.isDraggingY = false;
+      axisDragRef.current.isDraggingX = false;
+      chartDom.style.cursor = 'default';
+    };
+
+    const handleDoubleClick = (e) => {
+      const pos = getMousePos(e);
+      // Double-click on Y-axis: reset price zoom
+      if (isInYAxisArea(pos)) {
+        chartInstance.dispatchAction({
+          type: 'dataZoom',
+          dataZoomIndex: 1,
+          start: 0,
+          end: 100,
+        });
+      }
+      // Double-click on X-axis: reset date zoom
+      if (isInXAxisArea(pos)) {
+        chartInstance.dispatchAction({
+          type: 'dataZoom',
+          dataZoomIndex: 0,
+          start: 0,
+          end: 100,
+        });
+      }
+    };
+
+    chartDom.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    chartDom.addEventListener('dblclick', handleDoubleClick);
+
+    return () => {
+      chartDom.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      chartDom.removeEventListener('dblclick', handleDoubleClick);
+    };
+  }, [loading, candles.length]);
   useEffect(() => {
     const resize = () => {
       const canvas = overlayCanvasRef.current;
@@ -161,7 +363,6 @@ function EChartsStock({ symbol, userTrades = [], onSymbolChange }) {
       canvas.height = rect.height;
       redrawAll();
     };
-    // Wait for chart to render
     const timer = setTimeout(resize, 300);
     window.addEventListener('resize', resize);
     return () => {
@@ -180,7 +381,7 @@ function EChartsStock({ symbol, userTrades = [], onSymbolChange }) {
     };
   };
 
-  const drawColor = isDarkTheme ? '#3b82f6' : '#1d4ed8';
+  const drawColor = isDarkTheme ? '#2962ff' : '#1d4ed8';
 
   const drawShape = (ctx, d, preview = false) => {
     ctx.save();
@@ -209,6 +410,7 @@ function EChartsStock({ symbol, userTrades = [], onSymbolChange }) {
           ctx.lineTo(x1 + dx * s, y1 + dy * s);
         }
         ctx.stroke();
+        ctx.beginPath(); ctx.arc(x1, y1, 4, 0, Math.PI * 2); ctx.fill();
         break;
       case 'horizontal':
         ctx.setLineDash([6, 3]);
@@ -268,7 +470,6 @@ function EChartsStock({ symbol, userTrades = [], onSymbolChange }) {
 
   const handleMouseDown = (e) => {
     const tool = drawingRef.current.tool;
-    console.log('[DRAW] MouseDown with tool:', tool);
     if (tool === 'cursor') return;
     e.preventDefault();
     e.stopPropagation();
@@ -339,7 +540,9 @@ function EChartsStock({ symbol, userTrades = [], onSymbolChange }) {
     }]);
   };
 
-  const handleClearAll = () => {
+  const handleClearAll = async () => {
+    if (drawings.length === 0) return;
+    if (!window.confirm(`Delete all ${drawings.length} drawings for ${symbol}?`)) return;
     setDrawings([]);
     drawingRef.current.drawings = [];
     const canvas = overlayCanvasRef.current;
@@ -347,14 +550,23 @@ function EChartsStock({ symbol, userTrades = [], onSymbolChange }) {
       const ctx = canvas.getContext('2d');
       ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
+    await clearDrawings(userId, symbol);
+  };
+
+  const handleUndo = () => {
+    setDrawings(prev => prev.slice(0, -1));
   };
 
   useEffect(() => {
     const kd = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault();
         setDrawings(prev => prev.slice(0, -1));
       }
-      const map = { v: 'cursor', t: 'trendline', h: 'horizontal', w: 'vertical', r: 'rectangle', f: 'fibonacci', a: 'text', y: 'arrow' };
+      const map = { 
+        v: 'cursor', t: 'trendline', h: 'horizontal', w: 'vertical', 
+        b: 'rectangle', f: 'fibonacci', x: 'text', a: 'arrow', r: 'ray' 
+      };
       if (!e.ctrlKey && !e.metaKey && !e.target.matches('input, textarea') && map[e.key.toLowerCase()]) {
         setActiveTool(map[e.key.toLowerCase()]);
       }
@@ -549,6 +761,8 @@ function EChartsStock({ symbol, userTrades = [], onSymbolChange }) {
       yAxis: [
         {
           scale: true, position: 'right',
+          triggerEvent: true,
+          axisPointer: { show: true, snap: false },
           axisLine: { lineStyle: { color: theme.axisLine } },
           axisLabel: { color: theme.text, fontSize: 10, formatter: (val) => `Rs${val.toFixed(0)}` },
           splitLine: { lineStyle: { color: theme.gridLine } },
@@ -560,12 +774,39 @@ function EChartsStock({ symbol, userTrades = [], onSymbolChange }) {
           splitLine: { show: false },
         },
       ],
-      dataZoom: [
-        { type: 'inside', xAxisIndex: [0, 1], start: 0, end: 100, zoomLock: false },
+            dataZoom: [
+        // X-axis: mouse wheel + inside drag (existing behavior)
+        { 
+          type: 'inside', 
+          xAxisIndex: [0, 1], 
+          start: 0, 
+          end: 100, 
+          zoomLock: false,
+          zoomOnMouseWheel: true,
+          moveOnMouseMove: true,
+          moveOnMouseWheel: false,
+        },
+        // Y-axis: inside zoom (controlled by our custom drag)
         {
-          show: true, xAxisIndex: [0, 1], type: 'slider', bottom: 10, height: 20,
-          start: 0, end: 100,
-          backgroundColor: theme.cardBg, borderColor: theme.border,
+          type: 'inside',
+          yAxisIndex: [0],
+          start: 0,
+          end: 100,
+          zoomOnMouseWheel: false,
+          moveOnMouseMove: false,
+          filterMode: 'none',
+        },
+        // Bottom slider (X-axis)
+        {
+          show: true, 
+          xAxisIndex: [0, 1], 
+          type: 'slider', 
+          bottom: 10, 
+          height: 20,
+          start: 0, 
+          end: 100,
+          backgroundColor: theme.cardBg, 
+          borderColor: theme.border,
           fillerColor: 'rgba(59, 130, 246, 0.2)',
           handleStyle: { color: '#3b82f6' },
           textStyle: { color: theme.text, fontSize: 10 },
@@ -573,6 +814,25 @@ function EChartsStock({ symbol, userTrades = [], onSymbolChange }) {
             lineStyle: { color: '#3b82f6' },
             areaStyle: { color: 'rgba(59, 130, 246, 0.1)' },
           },
+        },
+        // RIGHT-side price axis slider (Y-axis zoom - drag prices)
+        {
+          show: true,
+          yAxisIndex: [0],
+          type: 'slider',
+          right: 5,
+          width: 18,
+          top: 60,
+          bottom: 100,
+          start: 0,
+          end: 100,
+          backgroundColor: theme.cardBg,
+          borderColor: theme.border,
+          fillerColor: 'rgba(59, 130, 246, 0.15)',
+          handleStyle: { color: '#3b82f6' },
+          textStyle: { show: false },
+          showDetail: false,
+          brushSelect: false,
         },
       ],
       series: series,
@@ -658,6 +918,34 @@ function EChartsStock({ symbol, userTrades = [], onSymbolChange }) {
         marginBottom: 8, flexWrap: 'wrap', gap: 8,
         background: theme.cardBg, padding: 10, borderRadius: 8,
       }}>
+              {/* ── Chart Engine Toggle ── */}
+      <div style={{
+        display: 'flex', justifyContent: 'flex-end', alignItems: 'center',
+        marginBottom: 8, gap: 8,
+        background: theme.cardBg, padding: 10, borderRadius: 8,
+      }}>
+        <span style={{ color: theme.text, fontSize: 11, fontWeight: 700 }}>Chart Engine:</span>
+        <button
+          onClick={() => setChartEngine('echarts')}
+          style={{
+            padding: '6px 14px',
+            background: chartEngine === 'echarts' ? '#3b82f6' : theme.bg,
+            color: chartEngine === 'echarts' ? '#fff' : theme.textPrimary,
+            border: `1px solid ${chartEngine === 'echarts' ? '#3b82f6' : theme.border}`,
+            borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+          }}
+        >📊 ECharts (Drawings + Indicators)</button>
+        <button
+          onClick={() => setChartEngine('lightweight')}
+          style={{
+            padding: '6px 14px',
+            background: chartEngine === 'lightweight' ? '#8b5cf6' : theme.bg,
+            color: chartEngine === 'lightweight' ? '#fff' : theme.textPrimary,
+            border: `1px solid ${chartEngine === 'lightweight' ? '#8b5cf6' : theme.border}`,
+            borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+          }}
+        >⚡ TradingView Lightweight (Better Zoom)</button>
+      </div>
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
           <span style={{ color: theme.text, fontSize: 11, padding: '4px 6px', fontWeight: 700 }}>Time:</span>
           {timeframes.filter(t => t.group === 'intraday').map(tf => (
@@ -766,12 +1054,13 @@ function EChartsStock({ symbol, userTrades = [], onSymbolChange }) {
 
       <div ref={containerRef} style={{ position: 'relative', minHeight: 700 }}>
         <DrawingTools
-          activeTool={activeTool}
-          onToolSelect={setActiveTool}
-          onClearAll={handleClearAll}
-          drawingsCount={drawings.length}
-          theme={theme}
-        />
+  activeTool={activeTool}
+  onToolSelect={setActiveTool}
+  onClearAll={handleClearAll}
+  onUndo={handleUndo}
+  drawingsCount={drawings.length}
+  theme={theme}
+/>
 
         {loading ? (
           <div style={{
