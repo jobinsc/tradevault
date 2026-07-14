@@ -1052,59 +1052,71 @@ function EChartsStock({ symbol, userTrades = [], onSymbolChange }) {
         </div>
       </div>
 
-      <div ref={containerRef} style={{ position: 'relative', minHeight: 700 }}>
-        <DrawingTools
-  activeTool={activeTool}
-  onToolSelect={setActiveTool}
-  onClearAll={handleClearAll}
-  onUndo={handleUndo}
-  drawingsCount={drawings.length}
-  theme={theme}
-/>
-
-        {loading ? (
-          <div style={{
-            height: 700, background: theme.bg, borderRadius: 8,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: theme.text, fontSize: 16,
-          }}>
-            Loading {timeframe.label} chart for {symbol}...
-          </div>
-        ) : candles.length === 0 ? (
-          <div style={{
-            height: 700, background: theme.bg, borderRadius: 8,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: '#ef4444', fontSize: 16,
-          }}>
-            No data available for {symbol}
-          </div>
-        ) : (
+            <div ref={containerRef} style={{ position: 'relative', minHeight: 700 }}>
+        {chartEngine === 'echarts' ? (
           <>
-            <ReactECharts
-              ref={chartRef}
-              option={chartOption}
-              style={{ height: fullscreen ? window.innerHeight - 200 : 700, width: '100%' }}
-              theme={isDarkTheme ? 'dark' : 'light'}
-              notMerge={true}
+            <DrawingTools
+              activeTool={activeTool}
+              onToolSelect={setActiveTool}
+              onClearAll={handleClearAll}
+              onUndo={handleUndo}
+              drawingsCount={drawings.length}
+              theme={theme}
             />
-            <canvas
-              ref={overlayCanvasRef}
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: '100%',
-                pointerEvents: activeTool === 'cursor' ? 'none' : 'auto',
-                cursor: getCursorStyle(),
-                zIndex: 10,
-              }}
-              onMouseDown={handleMouseDown}
-              onMouseMove={handleMouseMove}
-              onMouseUp={handleMouseUp}
-              onMouseLeave={handleMouseUp}
-            />
+
+            {loading ? (
+              <div style={{
+                height: 700, background: theme.bg, borderRadius: 8,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: theme.text, fontSize: 16,
+              }}>
+                Loading {timeframe.label} chart for {symbol}...
+              </div>
+            ) : candles.length === 0 ? (
+              <div style={{
+                height: 700, background: theme.bg, borderRadius: 8,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: '#ef4444', fontSize: 16,
+              }}>
+                No data available for {symbol}
+              </div>
+            ) : (
+              <>
+                <ReactECharts
+                  ref={chartRef}
+                  option={chartOption}
+                  style={{ height: fullscreen ? window.innerHeight - 200 : 700, width: '100%' }}
+                  theme={isDarkTheme ? 'dark' : 'light'}
+                  notMerge={true}
+                />
+                <canvas
+                  ref={overlayCanvasRef}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    pointerEvents: activeTool === 'cursor' ? 'none' : 'auto',
+                    cursor: getCursorStyle(),
+                    zIndex: 10,
+                  }}
+                  onMouseDown={handleMouseDown}
+                  onMouseMove={handleMouseMove}
+                  onMouseUp={handleMouseUp}
+                  onMouseLeave={handleMouseUp}
+                />
+              </>
+            )}
           </>
+        ) : (
+          <LightweightChartView
+            symbol={symbol}
+            timeframe={timeframe}
+            isDarkTheme={isDarkTheme}
+            theme={theme}
+            userTrades={userTrades}
+          />
         )}
       </div>
 
